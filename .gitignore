@@ -1,0 +1,31 @@
+# .NET
+bin/
+obj/
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Local configuration / secrets
+**/appsettings.json
+**/appsettings.Development.json
+**/appsettings.Local.json
+
+# Uploaded client documents
+**/uploads/
+
+# Archives / packages
+*.zip
+*.rar
+*.7z
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Logs
+logs/
+*.log
