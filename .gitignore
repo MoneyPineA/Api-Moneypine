@@ -1,16 +1,10 @@
-# .NET
-bin/
-obj/
-.vs/
-*.user
-*.suo
-*.userosscache
-*.sln.docstates
-
-# Local configuration / secrets
+﻿# Local configuration / secrets
 **/appsettings.json
 **/appsettings.Development.json
 **/appsettings.Local.json
+*.env
+.env
+.env.*
 
 # Uploaded client documents
 **/uploads/
@@ -20,12 +14,58 @@ obj/
 *.rar
 *.7z
 
+# .NET / Visual Studio
+bin/
+obj/
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.rsuser
+*.userprefs
+*.pdb
+*.cache
+*.log
+*.tlog
+*.trx
+TestResult.xml
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
+
+# NuGet
+*.nupkg
+*.snupkg
+**/[Pp]ackages/*
+!**/[Pp]ackages/build/
+*.nuget.props
+*.nuget.targets
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# Publish output
+publish/
+*.[Pp]ublish.xml
+*.azurePubxml
+*.pubxml
+*.publishproj
+PublishScripts/
+
 # OS / IDE
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
+.history/
+.vshistory/
 
 # Logs
 logs/
-*.log
+[Ll]ogs/
+*.binlog
+MSBuild_Logs/
