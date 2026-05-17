@@ -23,6 +23,7 @@ namespace ApiEjemplo.Data
         public DbSet<Ruta> Rutas { get; set; }
         public DbSet<GestionCobranza> GestionesCobranza { get; set; }
         public DbSet<NotificacionAgendada> NotificacionesAgendadas { get; set; }
+        public DbSet<PeriodoAmortizacion> PeriodosAmortizacion { get; set; } // MONEYPINE-FIX: tabla amortización legada
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -129,6 +130,15 @@ namespace ApiEjemplo.Data
                 .HasForeignKey(g => g.usuario_id)
                 .OnDelete(DeleteBehavior.SetNull)
                 .IsRequired(false);
+
+            // =======================
+            // PRESTAMO -> PERIODOS AMORTIZACION (1 a muchos)
+            // =======================
+            modelBuilder.Entity<PeriodoAmortizacion>()
+                .HasOne(pa => pa.Prestamo)
+                .WithMany()
+                .HasForeignKey(pa => pa.prestamo_id)
+                .OnDelete(DeleteBehavior.Cascade);
 
             // =======================
             // PRESTAMO -> NOTIFICACIONES AGENDADAS (1 a muchos)

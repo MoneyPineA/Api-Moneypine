@@ -4,6 +4,7 @@ using ApiEjemplo.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace ApiEjemplo.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260517070139_AddTasaMoratorioAnual")]
+    partial class AddTasaMoratorioAnual
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -447,69 +450,6 @@ namespace ApiEjemplo.Migrations
                     b.ToTable("pago");
                 });
 
-            modelBuilder.Entity("ApiEjemplo.Models.PeriodoAmortizacion", b =>
-                {
-                    b.Property<int>("periodo_id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("periodo_id"));
-
-                    b.Property<decimal>("abono_capital")
-                        .HasColumnType("decimal(16,4)");
-
-                    b.Property<decimal>("ahorro_por_pago")
-                        .HasColumnType("decimal(16,4)");
-
-                    b.Property<decimal>("capital_pendiente")
-                        .HasColumnType("decimal(16,4)");
-
-                    b.Property<int>("dias_moratorio")
-                        .HasColumnType("int");
-
-                    b.Property<int>("estado_pago")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime>("fecha_inicio")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<DateTime?>("fecha_pagado")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<DateTime>("fecha_vencimiento")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<decimal>("gasto_cobranza")
-                        .HasColumnType("decimal(16,4)");
-
-                    b.Property<decimal>("interes_iva")
-                        .HasColumnType("decimal(16,4)");
-
-                    b.Property<decimal>("interes_moratorio")
-                        .HasColumnType("decimal(16,4)");
-
-                    b.Property<decimal>("interes_normal")
-                        .HasColumnType("decimal(16,4)");
-
-                    b.Property<decimal>("pago_pactado")
-                        .HasColumnType("decimal(16,4)");
-
-                    b.Property<int>("periodo")
-                        .HasColumnType("int");
-
-                    b.Property<int>("prestamo_id")
-                        .HasColumnType("int");
-
-                    b.Property<decimal>("saldo_final")
-                        .HasColumnType("decimal(16,4)");
-
-                    b.HasKey("periodo_id");
-
-                    b.HasIndex("prestamo_id");
-
-                    b.ToTable("periodo_amortizacion");
-                });
-
             modelBuilder.Entity("ApiEjemplo.Models.Prestamo", b =>
                 {
                     b.Property<int>("prestamo_id")
@@ -839,17 +779,6 @@ namespace ApiEjemplo.Migrations
                 {
                     b.HasOne("ApiEjemplo.Models.Prestamo", "Prestamo")
                         .WithMany("Pagos")
-                        .HasForeignKey("prestamo_id")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Prestamo");
-                });
-
-            modelBuilder.Entity("ApiEjemplo.Models.PeriodoAmortizacion", b =>
-                {
-                    b.HasOne("ApiEjemplo.Models.Prestamo", "Prestamo")
-                        .WithMany()
                         .HasForeignKey("prestamo_id")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();

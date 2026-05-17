@@ -70,6 +70,10 @@ namespace ApiEjemplo.Models
         [Column(TypeName = "decimal(10,2)")]
         public decimal mora_diaria { get; set; } = 0;
 
+        // MONEYPINE-FIX: tasa anual moratorio (tasaM del producto fuente, ej. 50%)
+        [Column(TypeName = "decimal(10,4)")]
+        public decimal tasa_moratorio_anual { get; set; } = 0;
+
         // Campos CNBV / producto
         [MaxLength(50)]
         public string? tipo_cnbv { get; set; }

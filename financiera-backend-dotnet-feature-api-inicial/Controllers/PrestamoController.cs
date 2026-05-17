@@ -203,6 +203,7 @@ namespace ApiEjemplo.Controllers
                 p.fecha_proximo_pago,
                 p.pago_mes,
                 p.mora_diaria,
+                p.tasa_moratorio_anual,
                 p.saldo_actual,
                 p.dias_gracia,
                 mora_acumulada   = moraAcumuladaActual,
@@ -453,6 +454,107 @@ namespace ApiEjemplo.Controllers
             );
 
             return NoContent();
+        }
+
+        // =====================================================
+        // GET: api/Prestamo/{id}/amortizacion
+        // MONEYPINE-FIX: devuelve períodos desde BD; recalcula interesMoratorio
+        //   solo para períodos RETRASO (estado_pago=1 vencido).
+        //   Períodos con mora congelada (estado_pago=5) conservan el valor guardado.
+        // =====================================================
+        [HttpGet("{id}/amortizacion")]
+        public async Task<IActionResult> GetAmortizacion(int id)
+        {
+            var prestamo = await _context.Prestamos.FindAsync(id);
+            if (prestamo == null)
+                return NotFound("Préstamo no encontrado");
+
+            var periodos = await _context.PeriodosAmortizacion
+                .Where(p => p.prestamo_id == id)
+                .OrderBy(p => p.periodo)
+                .ToListAsync();
+
+            if (!periodos.Any())
+                return NotFound("No hay períodos de amortización para este préstamo");
+
+            var hoy = DateTime.UtcNow.Date;
+            var tasaMoratoria = prestamo.tasa_moratorio_anual;
+            var isLiquidado = prestamo.estatus == EstatusPrestamo.LIQUIDADO;
+
+            // MONEYPINE-FIX: ventana PENDIENTE según frecuencia del producto
+            int freqDays = prestamo.forma_pago switch {
+                FormasPago.DIARIA      => 1,
+                FormasPago.SEMANAL     => 7,
+                FormasPago.CATORCENAL  => 14,
+                FormasPago.QUINCENAL   => 15,
+                FormasPago.MENSUAL     => 30,
+                _                     => 7,
+            };
+
+            var result = periodos.Select(p =>
+            {
+                string estadoPago;
+                decimal interesMoratorio;
+                int diasMoratorio;
+
+                bool esPagado   = p.estado_pago == 2 || p.estado_pago == 3;
+                bool esCongelado = p.estado_pago == 5;
+                var  fechaVenc  = p.fecha_vencimiento.Date;
+
+                if (isLiquidado || esPagado)
+                {
+                    // MONEYPINE-FIX: período pagado — mora = 0
+                    estadoPago       = "PAGADO";
+                    interesMoratorio = 0;
+                    diasMoratorio    = 0;
+                }
+                else if (esCongelado)
+                {
+                    // MONEYPINE-FIX: mora congelada — estadoPago CONGELADO para distinguir
+                    //   de RETRASO en el contador de moratorios vigentes (BUG 1)
+                    estadoPago       = "CONGELADO";
+                    interesMoratorio = p.interes_moratorio;
+                    diasMoratorio    = p.dias_moratorio;
+                }
+                else if (fechaVenc < hoy)
+                {
+                    // MONEYPINE-FIX: vencido sin pagar — recalcular moratorio sobre capital insoluto
+                    //   formula: capitalPendiente × (tasaAnualMoratorio/100/365) × diasMora
+                    estadoPago    = "RETRASO";
+                    diasMoratorio = (int)(hoy - fechaVenc).TotalDays;
+                    interesMoratorio = tasaMoratoria > 0 && diasMoratorio > 0 && p.capital_pendiente > 0
+                        ? Math.Round(p.capital_pendiente * (tasaMoratoria / 100m / 365m) * diasMoratorio, 2)
+                        : 0;
+                }
+                else
+                {
+                    // Próximo período o futuro
+                    estadoPago       = fechaVenc <= hoy.AddDays(freqDays) ? "PENDIENTE" : "INACTIVO";
+                    interesMoratorio = 0;
+                    diasMoratorio    = 0;
+                }
+
+                var interes       = p.interes_normal + p.interes_iva;
+                var pagoProgramado = p.abono_capital + interes;
+
+                return new {
+                    periodo          = p.periodo,
+                    fechaPago        = p.fecha_vencimiento.ToString("yyyy-MM-dd"),
+                    saldoPendiente   = p.capital_pendiente,
+                    capitalPendiente = p.capital_pendiente,
+                    abonoCapital     = p.abono_capital,
+                    interes,
+                    interesIVA       = interes,
+                    interesMoratorio,
+                    diasMoratorio,
+                    saldoFinal       = p.saldo_final,
+                    pagoProgramado,
+                    pagoTotal        = pagoProgramado + interesMoratorio,
+                    estadoPago,
+                };
+            }).ToList();
+
+            return Ok(result);
         }
 
         // =====================================================
