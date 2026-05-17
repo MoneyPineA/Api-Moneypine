@@ -171,6 +171,23 @@ namespace ApiEjemplo.Controllers
                     .ToListAsync<object>()
                 : null;
 
+            // MONEYPINE-FIX: calcular mora acumulada actual segun dias de atraso
+            decimal moraAcumuladaActual = 0;
+            if (p.fecha_proximo_pago.HasValue && p.saldo_actual > 0)
+            {
+                var fechaLimite = p.fecha_proximo_pago.Value.AddDays(p.dias_gracia);
+                if (DateTime.UtcNow > fechaLimite)
+                {
+                    int diasAtraso = (int)(DateTime.UtcNow - p.fecha_proximo_pago.Value).TotalDays;
+                    moraAcumuladaActual = diasAtraso * p.mora_diaria;
+                }
+            }
+
+            // MONEYPINE-FIX: totales de pagos para la consulta de movimientos
+            var totalPagado   = p.Pagos.Sum(x => x.monto_pagado);
+            var totalMoraPagada = p.Pagos.Sum(x => x.mora_pagada);
+            var pagosRealizados = p.Pagos.Count;
+
             return Ok(new {
                 p.prestamo_id,
                 p.cliente_id,
@@ -188,6 +205,10 @@ namespace ApiEjemplo.Controllers
                 p.mora_diaria,
                 p.saldo_actual,
                 p.dias_gracia,
+                mora_acumulada   = moraAcumuladaActual,
+                total_pagado     = totalPagado,
+                total_mora_pagada = totalMoraPagada,
+                pagos_realizados = pagosRealizados,
                 p.tipo_cnbv,
                 p.tb_interes_normal,
                 p.tipo_tasa,
@@ -432,6 +453,68 @@ namespace ApiEjemplo.Controllers
             );
 
             return NoContent();
+        }
+
+        // =====================================================
+        // GET: api/Prestamo/comisiones
+        // Devuelve préstamos con comisión calculada por asesor
+        // =====================================================
+        [HttpGet("comisiones")]
+        public async Task<IActionResult> GetComisiones(
+            [FromQuery] DateTime? desde      = null,
+            [FromQuery] DateTime? hasta      = null,
+            [FromQuery] int?      cobrador_id = null,
+            [FromQuery] decimal   porcentaje  = 3.2m)
+        {
+            var query = _context.Prestamos
+                .Include(p => p.Cliente).ThenInclude(c => c.Usuario)
+                .Where(p => p.estatus != EstatusPrestamo.PENDIENTE && p.estatus != EstatusPrestamo.CANCELADO)
+                .AsQueryable();
+
+            if (desde.HasValue)
+                query = query.Where(p => p.fecha_inicio >= desde.Value || p.fecha_creacion >= desde.Value);
+            if (hasta.HasValue)
+                query = query.Where(p => p.fecha_inicio <= hasta.Value.AddDays(1));
+            if (cobrador_id.HasValue)
+                query = query.Where(p => p.cobrador_id == cobrador_id.Value);
+
+            var prestamos = await query.OrderByDescending(p => p.fecha_inicio).ToListAsync();
+
+            var cobradorIds = prestamos.Where(p => p.cobrador_id.HasValue).Select(p => p.cobrador_id!.Value).Distinct().ToList();
+            var cobradores  = await _context.Usuarios
+                .Where(u => cobradorIds.Contains(u.usuario_id))
+                .ToDictionaryAsync(u => u.usuario_id, u => $"{u.nombre} {u.apellido}".Trim());
+
+            var idx    = 1;
+            var result = prestamos.Select(p =>
+            {
+                var monto     = p.monto;
+                var comision  = Math.Round(monto * (porcentaje / 100m), 2);
+                var fecha     = p.fecha_inicio.ToString("yyyy-MM-dd");
+                var asesor    = p.cobrador_id.HasValue && cobradores.ContainsKey(p.cobrador_id.Value)
+                                    ? cobradores[p.cobrador_id.Value]
+                                    : "—";
+                var cliente   = p.Cliente != null && p.Cliente.Usuario != null
+                                    ? $"{p.Cliente.Usuario.nombre} {p.Cliente.Usuario.apellido} {p.Cliente.apellido_materno}".Trim()
+                                    : $"Cliente #{p.cliente_id}";
+                var estadoCom = p.estatus == EstatusPrestamo.LIQUIDADO ? "PAGADO" : "PENDIENTE";
+                return new
+                {
+                    id          = $"C-{(idx++):D3}",
+                    credito     = p.prestamo_id,
+                    cliente_id  = p.cliente_id,
+                    cliente,
+                    asesor,
+                    cobrador_id = p.cobrador_id,
+                    fecha,
+                    importe     = monto,
+                    porcentaje,
+                    comision,
+                    estado      = estadoCom,
+                };
+            }).ToList();
+
+            return Ok(result);
         }
     }
 }

@@ -17,7 +17,9 @@ namespace ApiEjemplo.Services
             ActivityType type,
             int clientId,
             decimal amount,
-            NotificationLevel priority
+            NotificationLevel priority,
+            string? description = null,
+            int? userId = null
         )
         {
             var activity = new ActivityLog
@@ -25,7 +27,9 @@ namespace ApiEjemplo.Services
                 Type = type,
                 ClientId = clientId,
                 Amount = amount,
-                Priority = priority
+                Priority = priority,
+                Description = description,
+                UserId = userId,
             };
 
             _context.ActivityLogs.Add(activity);

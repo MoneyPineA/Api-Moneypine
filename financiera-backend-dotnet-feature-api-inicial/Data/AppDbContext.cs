@@ -21,6 +21,8 @@ namespace ApiEjemplo.Data
         public DbSet<Grupo> Grupos { get; set; }
         public DbSet<Gerencia> Gerencias { get; set; }
         public DbSet<Ruta> Rutas { get; set; }
+        public DbSet<GestionCobranza> GestionesCobranza { get; set; }
+        public DbSet<NotificacionAgendada> NotificacionesAgendadas { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -110,6 +112,31 @@ namespace ApiEjemplo.Data
                 .HasOne(p => p.Prestamo)
                 .WithMany(pr => pr.Pagos)
                 .HasForeignKey(p => p.prestamo_id)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // =======================
+            // PRESTAMO -> GESTIONES (1 a muchos)
+            // =======================
+            modelBuilder.Entity<GestionCobranza>()
+                .HasOne(g => g.Prestamo)
+                .WithMany()
+                .HasForeignKey(g => g.prestamo_id)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<GestionCobranza>()
+                .HasOne(g => g.Gestor)
+                .WithMany()
+                .HasForeignKey(g => g.usuario_id)
+                .OnDelete(DeleteBehavior.SetNull)
+                .IsRequired(false);
+
+            // =======================
+            // PRESTAMO -> NOTIFICACIONES AGENDADAS (1 a muchos)
+            // =======================
+            modelBuilder.Entity<NotificacionAgendada>()
+                .HasOne(n => n.Prestamo)
+                .WithMany()
+                .HasForeignKey(n => n.prestamo_id)
                 .OnDelete(DeleteBehavior.Cascade);
         }
     }

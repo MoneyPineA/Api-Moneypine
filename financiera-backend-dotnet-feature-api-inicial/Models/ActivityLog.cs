@@ -14,6 +14,10 @@ namespace ApiEjemplo.Models
 
         public NotificationLevel Priority { get; set; }
 
+        public string? Description { get; set; }
+
+        public int? UserId { get; set; }
+
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     }
 }

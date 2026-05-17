@@ -25,6 +25,71 @@ namespace ApiEjemplo.Controllers
         }
 
         // =====================================================
+        // GET: api/Pago/cobros-realizados
+        // Reporte enriquecido: pagos + datos del préstamo y cliente
+        // =====================================================
+        [HttpGet("cobros-realizados")]
+        public async Task<IActionResult> GetCobrosRealizados(
+            [FromQuery] DateTime? desde      = null,
+            [FromQuery] DateTime? hasta      = null,
+            [FromQuery] string?  metodo_pago = null,
+            [FromQuery] int?     cobrador_id = null)
+        {
+            var query = _context.Pagos
+                .Include(p => p.Prestamo)
+                    .ThenInclude(pr => pr.Cliente)
+                        .ThenInclude(c => c.Usuario)
+                .AsQueryable();
+
+            if (desde.HasValue)
+                query = query.Where(p => p.fecha_pago >= desde.Value);
+            if (hasta.HasValue)
+                query = query.Where(p => p.fecha_pago <= hasta.Value.AddDays(1));
+            if (!string.IsNullOrEmpty(metodo_pago) && metodo_pago != "Todos")
+                query = query.Where(p => p.metodo_pago == metodo_pago);
+            if (cobrador_id.HasValue)
+                query = query.Where(p => p.cobrador_id == cobrador_id.Value);
+
+            var pagos = await query
+                .OrderByDescending(p => p.fecha_pago)
+                .ToListAsync();
+
+            var cobradorIds = pagos
+                .Where(p => p.cobrador_id.HasValue)
+                .Select(p => p.cobrador_id!.Value)
+                .Distinct().ToList();
+
+            var cobradores = await _context.Usuarios
+                .Where(u => cobradorIds.Contains(u.usuario_id))
+                .ToDictionaryAsync(u => u.usuario_id, u => $"{u.nombre} {u.apellido}".Trim());
+
+            var result = pagos.Select(p => new
+            {
+                numero_recibo        = p.pago_id,
+                credito              = p.prestamo_id,
+                num_socio            = p.Prestamo?.Cliente?.clave_cliente,
+                socio                = p.Prestamo?.Cliente?.Usuario != null
+                    ? $"{p.Prestamo.Cliente.Usuario.nombre} {p.Prestamo.Cliente.Usuario.apellido} {p.Prestamo.Cliente.apellido_materno}".Trim()
+                    : $"Cliente #{p.Prestamo?.cliente_id}",
+                ruta                 = p.Prestamo?.destino ?? "—",
+                fecha_referencia     = p.fecha_pago.ToString("yyyy-MM-dd"),
+                referencia           = (string?)null,
+                asesor_aplicador     = p.cobrador_id.HasValue && cobradores.ContainsKey(p.cobrador_id.Value)
+                    ? cobradores[p.cobrador_id.Value] : null,
+                tipo_abono           = "Parcialidad(interés y capital)",
+                cantidad_recibo      = p.monto_pagado,
+                fecha_real_aplicacion = p.fecha_pago.ToString("yyyy-MM-dd HH:mm:ss"),
+                metodo_pago          = p.metodo_pago,
+                p.interes_pagado,
+                p.mora_pagada,
+                p.saldo_restante,
+                p.estatus,
+            });
+
+            return Ok(result);
+        }
+
+        // =====================================================
         // GET: api/Pago
         // Obtiene todos los pagos
         // =====================================================
