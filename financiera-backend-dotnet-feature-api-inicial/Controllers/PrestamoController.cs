@@ -478,11 +478,9 @@ namespace ApiEjemplo.Controllers
                 return NotFound("No hay períodos de amortización para este préstamo");
 
             var hoy = DateTime.UtcNow.Date;
-            var tasaMoratoria = prestamo.tasa_moratorio_anual;
             var isLiquidado = prestamo.estatus == EstatusPrestamo.LIQUIDADO;
 
-            // MONEYPINE-FIX: ventana PENDIENTE según frecuencia del producto
-            int freqDays = prestamo.forma_pago switch {
+            int freqDaysFromFormaPago = prestamo.forma_pago switch {
                 FormasPago.DIARIA      => 1,
                 FormasPago.SEMANAL     => 7,
                 FormasPago.CATORCENAL  => 14,
@@ -490,6 +488,17 @@ namespace ApiEjemplo.Controllers
                 FormasPago.MENSUAL     => 30,
                 _                     => 7,
             };
+            int freqDaysFromPeriodos = periodos.Count > 1
+                ? periodos
+                    .Zip(periodos.Skip(1), (a, b) => Math.Abs((int)(b.fecha_vencimiento.Date - a.fecha_vencimiento.Date).TotalDays))
+                    .Where(days => days > 0)
+                    .GroupBy(days => days)
+                    .OrderByDescending(g => g.Count())
+                    .ThenBy(g => g.Key)
+                    .Select(g => g.Key)
+                    .FirstOrDefault()
+                : 0;
+            int freqDays = freqDaysFromPeriodos > 0 ? freqDaysFromPeriodos : freqDaysFromFormaPago;
 
             var result = periodos.Select(p =>
             {
@@ -516,14 +525,14 @@ namespace ApiEjemplo.Controllers
                     interesMoratorio = p.interes_moratorio;
                     diasMoratorio    = p.dias_moratorio;
                 }
-                else if (fechaVenc < hoy)
+                else if (fechaVenc <= hoy) // MONEYPINE-FIX: <= incluye periodos que vencen hoy
                 {
                     // MONEYPINE-FIX: vencido sin pagar — recalcular moratorio sobre capital insoluto
                     //   formula: capitalPendiente × (tasaAnualMoratorio/100/365) × diasMora
                     estadoPago    = "RETRASO";
                     diasMoratorio = (int)(hoy - fechaVenc).TotalDays;
-                    interesMoratorio = tasaMoratoria > 0 && diasMoratorio > 0 && p.capital_pendiente > 0
-                        ? Math.Round(p.capital_pendiente * (tasaMoratoria / 100m / 365m) * diasMoratorio, 2)
+                    interesMoratorio = diasMoratorio > 0 && prestamo.mora_diaria > 0 // MONEYPINE-FIX: usa mora_diaria directa (tasa_moratorio_anual = 0 en migración)
+                        ? Math.Round(prestamo.mora_diaria * diasMoratorio, 2)
                         : 0;
                 }
                 else
@@ -540,7 +549,7 @@ namespace ApiEjemplo.Controllers
                 return new {
                     periodo          = p.periodo,
                     fechaPago        = p.fecha_vencimiento.ToString("yyyy-MM-dd"),
-                    saldoPendiente   = p.capital_pendiente,
+                    saldoPendiente   = p.capital_pendiente + interes + interesMoratorio, // MONEYPINE-FIX: incluye interés + mora
                     capitalPendiente = p.capital_pendiente,
                     abonoCapital     = p.abono_capital,
                     interes,

@@ -39,15 +39,21 @@ namespace ApiEjemplo.Controllers
             if (usuario == null)
                 return Unauthorized("Usuario o contraseña incorrectos");
 
-            // Verificar contraseña
-            var hasher = new PasswordHasher<Usuario>();
-            var resultado = hasher.VerifyHashedPassword(
-                usuario,
-                usuario.password_hash,
-                request.password
-            );
+            // Verificar contraseña — soporta BCrypt (migrado) y ASP.NET Identity (nuevos)
+            bool passwordValida;
+            if (usuario.password_hash.StartsWith("$2a$") || usuario.password_hash.StartsWith("$2b$"))
+            {
+                // MONEYPINE-FIX: hashes BCrypt del sistema anterior
+                passwordValida = BCrypt.Net.BCrypt.Verify(request.password, usuario.password_hash);
+            }
+            else
+            {
+                var hasher = new PasswordHasher<Usuario>();
+                var resultado = hasher.VerifyHashedPassword(usuario, usuario.password_hash, request.password);
+                passwordValida = resultado != PasswordVerificationResult.Failed;
+            }
 
-            if (resultado == PasswordVerificationResult.Failed)
+            if (!passwordValida)
                 return Unauthorized("Usuario o contraseña incorrectos");
 
             // Verificar estado
