@@ -11,7 +11,10 @@ FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
 WORKDIR /app
 COPY --from=build /app/publish .
 
-ENV ASPNETCORE_URLS=http://+:8080
-EXPOSE 8080
+# Railway inyecta PORT; si no existe usamos 8080
+ENV PORT=8080
+ENV ASPNETCORE_URLS=http://+:${PORT}
+
+EXPOSE ${PORT}
 
 ENTRYPOINT ["dotnet", "ApiEjemplo.dll"]
