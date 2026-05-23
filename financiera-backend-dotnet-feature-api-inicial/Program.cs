@@ -18,10 +18,10 @@ builder.Services.AddCors(options =>
     options.AddPolicy("AllowFrontend",
         policy =>
         {
-            // MONEYPINE-FIX: permite localhost y cualquier origen Railway en producción
+            // MONEYPINE-FIX: permite localhost, Railway y Vercel en producción
             var allowedOrigins = Environment.GetEnvironmentVariable("ALLOWED_ORIGINS")
                 ?.Split(',', StringSplitOptions.RemoveEmptyEntries)
-                ?? new[] { "http://localhost:3000", "http://localhost:5173" };
+                ?? new[] { "http://localhost:3000", "http://localhost:5173", "https://moneypine-frontend.vercel.app" };
 
             policy
                 .WithOrigins(allowedOrigins)
