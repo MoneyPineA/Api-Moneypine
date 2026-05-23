@@ -148,6 +148,14 @@ namespace ApiEjemplo.Data
                 .WithMany()
                 .HasForeignKey(n => n.prestamo_id)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            // MONEYPINE-FIX: Railway usa tabla 'notifications' (minúsculas), no 'Notifications'
+            modelBuilder.Entity<Notification>().ToTable("notifications");
+
+            // MONEYPINE-FIX: columnas Description y UserId no existen en Railway ActivityLogs
+            modelBuilder.Entity<ActivityLog>()
+                .Ignore(a => a.Description)
+                .Ignore(a => a.UserId);
         }
     }
 }
