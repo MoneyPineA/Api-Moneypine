@@ -139,6 +139,24 @@ builder.Services.AddSwaggerGen(options =>
 var app = builder.Build();
 
 // Pipeline
+
+// MONEYPINE-FIX: exception handler ANTES de CORS para que los 500 incluyan el header CORS
+app.UseExceptionHandler(errorApp =>
+{
+    errorApp.Run(async context =>
+    {
+        context.Response.StatusCode = 500;
+        context.Response.ContentType = "application/json";
+        var ex = context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>();
+        await context.Response.WriteAsJsonAsync(new
+        {
+            error = "Error interno del servidor",
+            message = ex?.Error?.Message,
+            inner = ex?.Error?.InnerException?.Message
+        });
+    });
+});
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
