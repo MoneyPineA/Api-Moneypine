@@ -39,15 +39,21 @@ namespace ApiEjemplo.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime(6)");
 
+                    b.Property<string>("Description")
+                        .HasColumnType("longtext");
+
                     b.Property<int>("Priority")
                         .HasColumnType("int");
 
                     b.Property<int>("Type")
                         .HasColumnType("int");
 
+                    b.Property<int?>("UserId")
+                        .HasColumnType("int");
+
                     b.HasKey("Id");
 
-                    b.ToTable("ActivityLogs");
+                    b.ToTable("ActivityLogs", (string)null);
                 });
 
             modelBuilder.Entity("ApiEjemplo.Models.Cliente", b =>
@@ -65,9 +71,6 @@ namespace ApiEjemplo.Migrations
                         .HasColumnType("longtext");
 
                     b.Property<string>("colonia")
-                        .HasColumnType("longtext");
-
-                    b.Property<string>("cp")
                         .HasColumnType("longtext");
 
                     b.Property<string>("curp")
@@ -97,9 +100,6 @@ namespace ApiEjemplo.Migrations
                     b.Property<string>("estado_civil")
                         .HasColumnType("longtext");
 
-                    b.Property<string>("estado_domicilio")
-                        .HasColumnType("longtext");
-
                     b.Property<DateTime?>("fecha_nacimiento")
                         .HasColumnType("datetime(6)");
 
@@ -112,14 +112,8 @@ namespace ApiEjemplo.Migrations
                     b.Property<string>("lugar_nacimiento")
                         .HasColumnType("longtext");
 
-                    b.Property<string>("municipio")
-                        .HasColumnType("longtext");
-
                     b.Property<int?>("no_dependientes")
                         .HasColumnType("int");
-
-                    b.Property<string>("num_ext")
-                        .HasColumnType("longtext");
 
                     b.Property<bool>("permitir_acceso_web")
                         .HasColumnType("tinyint(1)");
@@ -150,7 +144,7 @@ namespace ApiEjemplo.Migrations
                     b.HasIndex("usuario_id")
                         .IsUnique();
 
-                    b.ToTable("cliente");
+                    b.ToTable("cliente", (string)null);
                 });
 
             modelBuilder.Entity("ApiEjemplo.Models.Documento", b =>
@@ -209,7 +203,7 @@ namespace ApiEjemplo.Migrations
 
                     b.HasKey("DocumentoId");
 
-                    b.ToTable("documento");
+                    b.ToTable("documento", (string)null);
                 });
 
             modelBuilder.Entity("ApiEjemplo.Models.Gerencia", b =>
@@ -240,7 +234,7 @@ namespace ApiEjemplo.Migrations
 
                     b.HasIndex("gerente_id");
 
-                    b.ToTable("gerencia");
+                    b.ToTable("gerencia", (string)null);
                 });
 
             modelBuilder.Entity("ApiEjemplo.Models.GestionCobranza", b =>
@@ -274,7 +268,7 @@ namespace ApiEjemplo.Migrations
 
                     b.HasIndex("usuario_id");
 
-                    b.ToTable("gestion_cobranza");
+                    b.ToTable("gestion_cobranza", (string)null);
                 });
 
             modelBuilder.Entity("ApiEjemplo.Models.Grupo", b =>
@@ -343,7 +337,7 @@ namespace ApiEjemplo.Migrations
 
                     b.HasKey("grupo_id");
 
-                    b.ToTable("grupo");
+                    b.ToTable("grupo", (string)null);
                 });
 
             modelBuilder.Entity("ApiEjemplo.Models.NotificacionAgendada", b =>
@@ -376,7 +370,7 @@ namespace ApiEjemplo.Migrations
 
                     b.HasIndex("prestamo_id");
 
-                    b.ToTable("notificacion_agendada");
+                    b.ToTable("notificacion_agendada", (string)null);
                 });
 
             modelBuilder.Entity("ApiEjemplo.Models.Notification", b =>
@@ -405,7 +399,7 @@ namespace ApiEjemplo.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("notifications", (string)null);
+                    b.ToTable("Notifications", (string)null);
                 });
 
             modelBuilder.Entity("ApiEjemplo.Models.Pago", b =>
@@ -450,7 +444,7 @@ namespace ApiEjemplo.Migrations
 
                     b.HasIndex("prestamo_id");
 
-                    b.ToTable("pago");
+                    b.ToTable("pago", (string)null);
                 });
 
             modelBuilder.Entity("ApiEjemplo.Models.PeriodoAmortizacion", b =>
@@ -513,7 +507,7 @@ namespace ApiEjemplo.Migrations
 
                     b.HasIndex("prestamo_id");
 
-                    b.ToTable("periodo_amortizacion");
+                    b.ToTable("periodo_amortizacion", (string)null);
                 });
 
             modelBuilder.Entity("ApiEjemplo.Models.Prestamo", b =>
@@ -669,7 +663,7 @@ namespace ApiEjemplo.Migrations
 
                     b.HasIndex("grupo_id");
 
-                    b.ToTable("prestamo");
+                    b.ToTable("prestamo", (string)null);
                 });
 
             modelBuilder.Entity("ApiEjemplo.Models.RefreshToken", b =>
@@ -710,7 +704,7 @@ namespace ApiEjemplo.Migrations
 
                     b.HasIndex("UsuarioId");
 
-                    b.ToTable("refresh_tokens");
+                    b.ToTable("refresh_tokens", (string)null);
                 });
 
             modelBuilder.Entity("ApiEjemplo.Models.Ruta", b =>
@@ -743,7 +737,7 @@ namespace ApiEjemplo.Migrations
 
                     b.HasIndex("gerencia_id");
 
-                    b.ToTable("ruta");
+                    b.ToTable("ruta", (string)null);
                 });
 
             modelBuilder.Entity("ApiEjemplo.Models.Usuario", b =>
@@ -788,7 +782,7 @@ namespace ApiEjemplo.Migrations
 
                     b.HasKey("usuario_id");
 
-                    b.ToTable("usuario");
+                    b.ToTable("usuario", (string)null);
                 });
 
             modelBuilder.Entity("ApiEjemplo.Models.Cliente", b =>
