@@ -35,8 +35,12 @@ namespace ApiEjemplo.Controllers
             // VALORES POR DEFECTO
             // ==========================
 
-            var end = endDate ?? TimeHelper.GetMexicoTime();
-            var start = startDate ?? end.AddDays(-30);
+            var end = endDate.HasValue
+                ? TimeHelper.ConvertToMexicoTime(DateTime.SpecifyKind(endDate.Value, DateTimeKind.Utc))
+                : TimeHelper.GetMexicoTime();
+            var start = startDate.HasValue
+                ? TimeHelper.ConvertToMexicoTime(DateTime.SpecifyKind(startDate.Value, DateTimeKind.Utc))
+                : end.AddDays(-30);
 
             end = end.Date.AddDays(1).AddTicks(-1);
 
