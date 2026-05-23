@@ -448,30 +448,38 @@ namespace ApiEjemplo.Controllers
             // MONEYPINE-FIX: revertir saldo — suma el total pagado de vuelta al saldo pendiente
             prestamo.saldo_actual += pago.monto_pagado;
 
-            // MONEYPINE-FIX: revertir el último periodo con estado_pago = 3 (pagado por API)
-            var periodoRevertir = await _context.PeriodosAmortizacion
-                .Where(pa => pa.prestamo_id == pago.prestamo_id && pa.estado_pago == 3)
-                .OrderByDescending(pa => pa.periodo)
-                .FirstOrDefaultAsync();
+            // MONEYPINE-FIX: buscar TODOS los periodos marcados por este pago
+            // Criterios: mismo prestamo_id + estado_pago IN (2,3) + fecha_pagado coincide con fecha_pago del recibo
+            // estado_pago=2 cubre datos importados del sistema viejo; estado_pago=3 cubre pagos registrados por la API
+            var periodosARevertir = await _context.PeriodosAmortizacion
+                .Where(pa => pa.prestamo_id == pago.prestamo_id
+                          && (pa.estado_pago == 2 || pa.estado_pago == 3)
+                          && pa.fecha_pagado.HasValue
+                          && pa.fecha_pagado.Value.Date == pago.fecha_pago.Date)
+                .OrderBy(pa => pa.periodo)
+                .ToListAsync();
 
-            // DEBUG-LOG-2: periodo encontrado
-            if (periodoRevertir != null)
-                Console.WriteLine($"[DELETE-PAGO] periodo encontrado: periodo_id={periodoRevertir.periodo_id} periodo={periodoRevertir.periodo} estado_pago={periodoRevertir.estado_pago} fecha_pagado={periodoRevertir.fecha_pagado}");
-            else
-                Console.WriteLine($"[DELETE-PAGO] SIN periodo con estado_pago=3 para prestamo_id={pago.prestamo_id}");
+            Console.WriteLine($"[DELETE-PAGO] periodos a revertir: {periodosARevertir.Count} (fecha_pago={pago.fecha_pago:yyyy-MM-dd})");
 
-            if (periodoRevertir != null)
+            // MONEYPINE-FIX: revertir TODOS los periodos encontrados, no solo el primero
+            DateTime? fechaVencimientoMasAntigua = null;
+            foreach (var p in periodosARevertir)
             {
-                periodoRevertir.estado_pago       = 1;
-                periodoRevertir.fecha_pagado       = null;
-                periodoRevertir.dias_moratorio     = 0;
-                periodoRevertir.interes_moratorio  = 0;
+                Console.WriteLine($"[DELETE-PAGO] revirtiendo periodo_id={p.periodo_id} periodo={p.periodo} estado_pago={p.estado_pago} fecha_vencimiento={p.fecha_vencimiento:yyyy-MM-dd}");
+                p.estado_pago       = 1;
+                p.fecha_pagado      = null;
+                p.dias_moratorio    = 0;
+                p.interes_moratorio = 0;
+                _context.PeriodosAmortizacion.Update(p);
 
-                // MONEYPINE-FIX: restaurar fecha_proximo_pago al vencimiento del periodo revertido
-                prestamo.fecha_proximo_pago = periodoRevertir.fecha_vencimiento;
-                _context.PeriodosAmortizacion.Update(periodoRevertir); // MONEYPINE-FIX: forzar tracking del cambio
-                Console.WriteLine($"[DELETE-PAGO] periodo revertido → estado_pago=1 fecha_vencimiento={periodoRevertir.fecha_vencimiento:yyyy-MM-dd}");
+                // Guardar el vencimiento más antiguo para restaurar fecha_proximo_pago
+                if (fechaVencimientoMasAntigua == null || p.fecha_vencimiento < fechaVencimientoMasAntigua)
+                    fechaVencimientoMasAntigua = p.fecha_vencimiento;
             }
+
+            // MONEYPINE-FIX: restaurar fecha_proximo_pago al vencimiento más antiguo revertido
+            if (fechaVencimientoMasAntigua.HasValue)
+                prestamo.fecha_proximo_pago = fechaVencimientoMasAntigua;
 
             // MONEYPINE-FIX: si estaba LIQUIDADO, revertir a ATRASADO al eliminar un pago
             if (prestamo.estatus == EstatusPrestamo.LIQUIDADO)
@@ -480,14 +488,12 @@ namespace ApiEjemplo.Controllers
             _context.Pagos.Remove(pago);
             _context.Prestamos.Update(prestamo);
 
-            // DEBUG-LOG-3: antes de guardar
-            Console.WriteLine($"[DELETE-PAGO] ANTES SaveChanges: saldo_actual={prestamo.saldo_actual} estatus={prestamo.estatus} fecha_proximo_pago={prestamo.fecha_proximo_pago:yyyy-MM-dd}");
+            Console.WriteLine($"[DELETE-PAGO] ANTES SaveChanges: saldo_actual={prestamo.saldo_actual} estatus={prestamo.estatus} fecha_proximo_pago={prestamo.fecha_proximo_pago:yyyy-MM-dd} periodos_revertidos={periodosARevertir.Count}");
 
             await _context.SaveChangesAsync();
             await transaction.CommitAsync();
 
-            // DEBUG-LOG-4: guardado exitoso
-            Console.WriteLine($"[DELETE-PAGO] SaveChanges OK — pago {id} eliminado");
+            Console.WriteLine($"[DELETE-PAGO] SaveChanges OK — pago {id} eliminado, {periodosARevertir.Count} periodos revertidos a estado_pago=1");
 
             return NoContent();
         }
