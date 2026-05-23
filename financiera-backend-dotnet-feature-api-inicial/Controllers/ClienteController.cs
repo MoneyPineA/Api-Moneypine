@@ -162,8 +162,12 @@ namespace ApiEjemplo.Controllers
             cliente.telefono_oficina = dto.telefono_oficina ?? cliente.telefono_oficina;
             cliente.telefono_particular = dto.telefono_particular ?? cliente.telefono_particular;
 
-            cliente.direccion = dto.direccion ?? cliente.direccion;
-            cliente.colonia = dto.colonia ?? cliente.colonia;
+            cliente.direccion        = dto.direccion        ?? cliente.direccion;
+            cliente.colonia          = dto.colonia          ?? cliente.colonia;
+            cliente.cp               = dto.cp               ?? cliente.cp;
+            cliente.estado_domicilio = dto.estado_domicilio ?? cliente.estado_domicilio;
+            cliente.municipio        = dto.municipio        ?? cliente.municipio;
+            cliente.num_ext          = dto.num_ext          ?? cliente.num_ext;
             cliente.fecha_nacimiento = dto.fecha_nacimiento ?? cliente.fecha_nacimiento;
             cliente.curp = dto.curp ?? cliente.curp;
             cliente.rfc = dto.rfc ?? cliente.rfc;

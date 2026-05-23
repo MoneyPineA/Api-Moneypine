@@ -30,6 +30,10 @@ namespace ApiEjemplo.Models
 
         public string? direccion { get; set; }
         public string? colonia { get; set; }
+        public string? cp { get; set; }
+        public string? estado_domicilio { get; set; }
+        public string? municipio { get; set; }
+        public string? num_ext { get; set; }
         public double? latitud { get; set; }
         public double? longitud { get; set; }
         public DateTime? fecha_nacimiento { get; set; }
