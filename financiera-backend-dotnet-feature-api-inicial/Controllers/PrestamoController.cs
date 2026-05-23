@@ -226,11 +226,17 @@ namespace ApiEjemplo.Controllers
                        (p.Cliente.Usuario.apellido ?? "") + " " +
                        (p.Cliente.apellido_materno ?? "")).Trim()
                     : "Cliente #" + p.cliente_id,
-                curp      = p.Cliente != null ? p.Cliente.curp               : null,
-                rfc       = p.Cliente != null ? p.Cliente.rfc                : null,
-                telefono  = p.Cliente != null ? p.Cliente.telefono_particular : null,
-                direccion = p.Cliente != null ? p.Cliente.direccion          : null,
-                colonia   = p.Cliente != null ? p.Cliente.colonia            : null,
+                curp             = p.Cliente != null ? p.Cliente.curp                : null,
+                rfc              = p.Cliente != null ? p.Cliente.rfc                 : null,
+                telefono         = p.Cliente != null ? p.Cliente.telefono_particular : null,
+                direccion        = p.Cliente != null ? p.Cliente.direccion           : null,
+                colonia          = p.Cliente != null ? p.Cliente.colonia             : null,
+                // MONEYPINE-FIX: campos de domicilio extendidos para edición en CreditoDetalle
+                usuario_id       = p.Cliente != null ? p.Cliente.usuario_id          : (int?)null,
+                cp               = p.Cliente != null ? p.Cliente.cp                  : null,
+                estado_domicilio = p.Cliente != null ? p.Cliente.estado_domicilio    : null,
+                municipio        = p.Cliente != null ? p.Cliente.municipio           : null,
+                num_ext          = p.Cliente != null ? p.Cliente.num_ext             : null,
             });
         }
 
