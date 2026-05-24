@@ -286,10 +286,6 @@ namespace ApiEjemplo.Controllers
                 else break;
             }
 
-            // MONEYPINE-FIX: garantizar al menos 1 periodo marcado si hay pago positivo y periodos pendientes
-            if (!aMarcarPagados.Any() && primerPeriodo != null && (capitalPagado + interesPagado) > 0)
-                aMarcarPagados.Add(primerPeriodo);
-
             foreach (var p in aMarcarPagados)
             {
                 int diasMora = Math.Max(0, (int)(fechaPago.Date - p.fecha_vencimiento.Date).TotalDays);
