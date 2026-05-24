@@ -273,7 +273,7 @@ namespace ApiEjemplo.Controllers
 
             // MONEYPINE-FIX: marcar periodos usando costo real de cada periodo, no pago_mes promedio
             var aMarcarPagados = new List<PeriodoAmortizacion>();
-            decimal montoRestante = capitalPagado + interesPagado;
+            decimal montoRestante = capitalPagado + interesPagado + moraPagada;
 
             foreach (var p in periodosPendientes)
             {
