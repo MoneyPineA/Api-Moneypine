@@ -141,6 +141,24 @@ namespace ApiEjemplo.Controllers
             var activos   = await _context.Prestamos.Where(p => p.estatus == EstatusPrestamo.ACTIVO).ToListAsync();
             var atrasados = await _context.Prestamos.Where(p => p.estatus == EstatusPrestamo.ATRASADO).ToListAsync();
 
+            // MONEYPINE-FIX: moratoriosGenerados = mora_diaria × días_vencido por cada periodo pendiente vencido
+            // BUG ANTERIOR: sumaba pago_pactado (capital+interés completo) en lugar de mora real → número inflado al 93% del capital
+            // interes_moratorio en periodos estado_pago=1 siempre es 0 (solo se guarda al pagar)
+            var hoy = TimeHelper.GetMexicoTime().Date;
+            var periodsOverdue = await _context.PeriodosAmortizacion
+                .Where(pa => pa.estado_pago == 1 && pa.fecha_vencimiento <= hoy)
+                .Join(_context.Prestamos,
+                      pa => pa.prestamo_id,
+                      pr => pr.prestamo_id,
+                      (pa, pr) => new { pa.fecha_vencimiento, pr.mora_diaria })
+                .ToListAsync();
+
+            decimal moratoriosGenerados = periodsOverdue.Sum(x =>
+            {
+                int dias = Math.Max(0, (hoy - x.fecha_vencimiento.Date).Days);
+                return Math.Round(x.mora_diaria * dias, 2);
+            });
+
             return Ok(new
             {
                 creditosActivos     = activos.Count + atrasados.Count, // MONEYPINE-FIX: incluye ATRASADO para coincidir con tabla
@@ -150,9 +168,7 @@ namespace ApiEjemplo.Controllers
                 totalCartera        = activos.Sum(p => p.saldo_actual) + atrasados.Sum(p => p.saldo_actual), // MONEYPINE-FIX: usa saldo_actual, no capital original
                 carteraCorriente    = activos.Sum(p => p.saldo_actual),
                 saldoEnAtraso       = atrasados.Sum(p => p.saldo_actual),
-                moratoriosGenerados = (decimal)(await _context.PeriodosAmortizacion                          // MONEYPINE-FIX: mora real desde periodo_amortizacion
-                    .Where(pa => pa.estado_pago == 1 && pa.fecha_vencimiento <= DateTime.Today) // MONEYPINE-FIX: <= incluye periodos que vencen hoy
-                    .SumAsync(pa => (double?)(pa.interes_moratorio + pa.pago_pactado)) ?? 0)
+                moratoriosGenerados
             });
         }
 
