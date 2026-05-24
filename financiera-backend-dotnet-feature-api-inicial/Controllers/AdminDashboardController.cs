@@ -67,7 +67,7 @@ namespace ApiEjemplo.Controllers
                     .Select(g => new
                     {
                         Year = g.Key,
-                        total = g.Sum(p => p.monto_pagado + p.interes_pagado + p.mora_pagada)
+                        total = g.Sum(p => p.monto_pagado)
                     })
                     .OrderBy(x => x.Year)
                     .ToListAsync();
@@ -86,7 +86,7 @@ namespace ApiEjemplo.Controllers
                     {
                         g.Key.Year,
                         g.Key.Month,
-                        total = g.Sum(p => p.monto_pagado + p.interes_pagado + p.mora_pagada)
+                        total = g.Sum(p => p.monto_pagado)
                     })
                     .OrderBy(x => x.Year)
                     .ThenBy(x => x.Month)
@@ -105,7 +105,7 @@ namespace ApiEjemplo.Controllers
                     .Select(g => new
                     {
                         date = g.Key,
-                        total = g.Sum(p => p.monto_pagado + p.interes_pagado + p.mora_pagada)
+                        total = g.Sum(p => p.monto_pagado)
                     })
                     .OrderBy(x => x.date)
                     .ToListAsync();
