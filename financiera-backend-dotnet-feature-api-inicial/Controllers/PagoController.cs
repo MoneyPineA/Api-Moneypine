@@ -242,58 +242,46 @@ namespace ApiEjemplo.Controllers
             if (dto.monto_pagado > maxPermitido)
                 return BadRequest($"El monto ({dto.monto_pagado:N2}) excede el adeudo total ({maxPermitido:N2}). Saldo: ${prestamo.saldo_actual:N2}, Mora: ${moraAcumulada:N2}");
 
-            decimal montoDisponible = dto.monto_pagado;
+            decimal pagoRestante = dto.monto_pagado;
 
             // ================================
-            // 3. APLICAR PAGO: mora → interés → capital
-            //    MONEYPINE-FIX: interés real del periodo en vez de promedio global
+            // 3. ITERAR PERIODOS: marcar como pagado si el monto alcanza
+            //    costo_total = abono_capital + interés + mora propia del periodo
             // ================================
 
-            decimal moraPagada = Math.Min(montoDisponible, moraAcumulada);
-            montoDisponible -= moraPagada;
-
-            decimal interesPorPeriodo = primerPeriodo != null
-                ? primerPeriodo.interes_normal + primerPeriodo.interes_iva
-                : (prestamo.plazo_meses > 0 ? (prestamo.monto_total - prestamo.monto) / prestamo.plazo_meses : 0);
-
-            decimal interesPagado = Math.Min(montoDisponible, interesPorPeriodo);
-            montoDisponible -= interesPagado;
-            decimal capitalPagado = montoDisponible;
-
-            // ================================
-            // 4. ACTUALIZAR SALDO
-            // ================================
-
-            prestamo.saldo_actual -= (capitalPagado + interesPagado);
-            prestamo.saldo_actual = Math.Max(prestamo.saldo_actual, 0);
-
-            // ================================
-            // 5. MONEYPINE-FIX: marcar periodos como pagados en periodo_amortizacion
-            // ================================
-
-            // MONEYPINE-FIX: marcar periodos usando costo real de cada periodo, no pago_mes promedio
             var aMarcarPagados = new List<PeriodoAmortizacion>();
-            decimal montoRestante = capitalPagado + interesPagado;
+            decimal capitalPagado = 0m;
+            decimal interesPagado = 0m;
+            decimal moraPagada    = 0m;
 
             foreach (var p in periodosPendientes)
             {
-                decimal costoPeriodo = p.abono_capital + p.interes_normal + p.interes_iva;
-                if (montoRestante >= costoPeriodo - 0.01m)
+                int     diasMora     = Math.Max(0, (int)(fechaPago.Date - p.fecha_vencimiento.Date).TotalDays);
+                decimal moraPeriodo  = diasMora > 0 ? Math.Round(prestamo.mora_diaria * diasMora, 2) : 0m;
+                decimal costoPeriodo = p.abono_capital + p.interes_normal + p.interes_iva + moraPeriodo;
+
+                if (pagoRestante >= costoPeriodo - 0.01m)
                 {
                     aMarcarPagados.Add(p);
-                    montoRestante -= costoPeriodo;
+                    pagoRestante  -= costoPeriodo;
+                    capitalPagado += p.abono_capital;
+                    interesPagado += p.interes_normal + p.interes_iva;
+                    moraPagada    += moraPeriodo;
+
+                    p.estado_pago       = 3;
+                    p.fecha_pagado      = fechaPago;
+                    p.dias_moratorio    = diasMora;
+                    p.interes_moratorio = moraPeriodo;
                 }
                 else break;
             }
 
-            foreach (var p in aMarcarPagados)
-            {
-                int diasMora = Math.Max(0, (int)(fechaPago.Date - p.fecha_vencimiento.Date).TotalDays);
-                p.estado_pago       = 3;
-                p.fecha_pagado      = fechaPago;
-                p.dias_moratorio    = diasMora;
-                p.interes_moratorio = diasMora > 0 ? Math.Round(prestamo.mora_diaria * diasMora, 2) : 0;
-            }
+            // ================================
+            // 4. ACTUALIZAR SALDO: solo capital abonado, no interés
+            // ================================
+
+            prestamo.saldo_actual -= capitalPagado;
+            prestamo.saldo_actual  = Math.Max(prestamo.saldo_actual, 0);
 
             // ================================
             // 6. MONEYPINE-FIX: fecha_proximo_pago = siguiente periodo pendiente real
