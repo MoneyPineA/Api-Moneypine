@@ -429,8 +429,9 @@ namespace ApiEjemplo.Controllers
             if (prestamo == null)
                 return NotFound("Préstamo asociado no encontrado");
 
-            // MONEYPINE-FIX: revertir saldo — suma el total pagado de vuelta al saldo pendiente
-            prestamo.saldo_actual += pago.monto_pagado;
+            // Revertir solo el capital abonado (monto_pagado - interés - mora = capital)
+            decimal capitalRevertido = pago.monto_pagado - pago.interes_pagado - pago.mora_pagada;
+            prestamo.saldo_actual += capitalRevertido;
 
             // MONEYPINE-FIX: buscar TODOS los periodos marcados por este pago
             // Criterios: mismo prestamo_id + estado_pago IN (2,3) + fecha_pagado coincide con fecha_pago del recibo
