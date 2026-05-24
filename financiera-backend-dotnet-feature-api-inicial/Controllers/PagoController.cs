@@ -280,8 +280,11 @@ namespace ApiEjemplo.Controllers
             // 4. ACTUALIZAR SALDO: solo capital abonado, no interés
             // ================================
 
-            prestamo.saldo_actual -= capitalPagado;
-            prestamo.saldo_actual  = Math.Max(prestamo.saldo_actual, 0);
+            // MONEYPINE-FIX: saldo_actual = suma de abono_capital de periodos aún no pagados
+            // capital_pendiente es el saldo acumulado (balance), no el aporte por periodo — NO sumar
+            prestamo.saldo_actual = periodosPendientes
+                .Skip(aMarcarPagados.Count)
+                .Sum(p => p.abono_capital);
 
             // ================================
             // 6. MONEYPINE-FIX: fecha_proximo_pago = siguiente periodo pendiente real
@@ -429,9 +432,8 @@ namespace ApiEjemplo.Controllers
             if (prestamo == null)
                 return NotFound("Préstamo asociado no encontrado");
 
-            // Revertir solo el capital abonado (monto_pagado - interés - mora = capital)
-            decimal capitalRevertido = pago.monto_pagado - pago.interes_pagado - pago.mora_pagada;
-            prestamo.saldo_actual += capitalRevertido;
+            // MONEYPINE-FIX: saldo_actual derivado de periodos pendientes, no aritmética manual
+            // Los periodos revertidos aún no están en DB (SaveChanges no ejecutado), los sumamos por separado
 
             // MONEYPINE-FIX: buscar TODOS los periodos marcados por este pago
             // Criterios: mismo prestamo_id + estado_pago IN (2,3) + fecha_pagado coincide con fecha_pago del recibo
@@ -465,6 +467,13 @@ namespace ApiEjemplo.Controllers
             // MONEYPINE-FIX: restaurar fecha_proximo_pago al vencimiento más antiguo revertido
             if (fechaVencimientoMasAntigua.HasValue)
                 prestamo.fecha_proximo_pago = fechaVencimientoMasAntigua;
+
+            // MONEYPINE-FIX: saldo_actual = suma de abono_capital de periodos pendientes en DB + revertidos
+            // abono_capital = capital de ese periodo; capital_pendiente es el balance acumulado (NO sumar)
+            decimal saldoYaPendiente = await _context.PeriodosAmortizacion
+                .Where(pa => pa.prestamo_id == pago.prestamo_id && pa.estado_pago == 1)
+                .SumAsync(pa => pa.abono_capital);
+            prestamo.saldo_actual = saldoYaPendiente + periodosARevertir.Sum(p => p.abono_capital);
 
             // MONEYPINE-FIX: si estaba LIQUIDADO, revertir a ATRASADO al eliminar un pago
             if (prestamo.estatus == EstatusPrestamo.LIQUIDADO)

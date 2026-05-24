@@ -193,6 +193,27 @@ using (var scope = app.Services.CreateScope())
     db.Database.Migrate();
 }
 
+// =======================
+// MONEYPINE-FIX: recalcular saldo_actual de todos los préstamos desde sus periodos pendientes
+// Corrige saldos desincronizados causados por pagos previos con lógica errónea
+// =======================
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var prestamos = await db.Prestamos.ToListAsync();
+    foreach (var p in prestamos)
+    {
+        // abono_capital = capital que aporta ese periodo; sumar = capital total pendiente de pagar
+        var saldoPendiente = await db.PeriodosAmortizacion
+            .Where(pa => pa.prestamo_id == p.prestamo_id && pa.estado_pago == 1)
+            .SumAsync(pa => (decimal?)pa.abono_capital) ?? 0;
+
+        if (saldoPendiente > 0)
+            p.saldo_actual = saldoPendiente;
+    }
+    await db.SaveChangesAsync();
+}
+
 var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
 app.Urls.Add($"http://*:{port}");
 
