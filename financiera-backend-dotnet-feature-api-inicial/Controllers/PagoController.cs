@@ -200,7 +200,7 @@ namespace ApiEjemplo.Controllers
                 return BadRequest("El préstamo ya está liquidado");
 
             DateTime fechaPago = dto.fecha_pago.HasValue
-                ? TimeHelper.ConvertToMexicoTime(dto.fecha_pago.Value)
+                ? DateTime.SpecifyKind(dto.fecha_pago.Value.Date, DateTimeKind.Unspecified)
                 : TimeHelper.GetMexicoTime();
 
             if (dto.monto_pagado <= 0)
