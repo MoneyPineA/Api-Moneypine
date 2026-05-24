@@ -245,12 +245,14 @@ namespace ApiEjemplo.Controllers
             // MONEYPINE-FIX: acumular pagos del mismo día para evaluar si alcanzan el periodo
             var diaInicio = fechaPago.Date;
             var diaFin    = diaInicio.AddDays(1);
+            // MONEYPINE-FIX: sobrante real = monto - interés - mora - capital ya aplicado
+            // Evita re-acumular capital que ya marcó periodos en pagos anteriores del día
             decimal pagoAcumulado = await _context.Pagos
                 .Where(p => p.prestamo_id == dto.prestamo_id
                          && p.fecha_pago >= diaInicio
                          && p.fecha_pago < diaFin
                          && p.estatus == EstatusPago.APLICADO)
-                .SumAsync(p => (decimal?)p.monto_pagado) ?? 0m;
+                .SumAsync(p => (decimal?)(p.monto_pagado - p.interes_pagado - p.mora_pagada - p.abono_capital)) ?? 0m;
 
             decimal pagoRestante = dto.monto_pagado + pagoAcumulado;
 
@@ -363,6 +365,7 @@ namespace ApiEjemplo.Controllers
                 monto_pagado   = dto.monto_pagado,
                 interes_pagado = interesPagado,
                 mora_pagada    = moraPagada,
+                abono_capital  = capitalPagado,
                 saldo_restante = prestamo.saldo_actual,
                 metodo_pago    = dto.metodo_pago,
                 estatus        = EstatusPago.APLICADO

@@ -35,6 +35,9 @@ namespace ApiEjemplo.Models
         [Column(TypeName = "decimal(12,2)")]
         public decimal saldo_restante { get; set; }
 
+        [Column(TypeName = "decimal(12,2)")]
+        public decimal abono_capital { get; set; } = 0;
+
         // Método
         public string? metodo_pago { get; set; }
 
