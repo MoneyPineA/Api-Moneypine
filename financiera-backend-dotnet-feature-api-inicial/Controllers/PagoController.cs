@@ -242,7 +242,17 @@ namespace ApiEjemplo.Controllers
             if (dto.monto_pagado > maxPermitido)
                 return BadRequest($"El monto ({dto.monto_pagado:N2}) excede el adeudo total ({maxPermitido:N2}). Saldo: ${prestamo.saldo_actual:N2}, Mora: ${moraAcumulada:N2}");
 
-            decimal pagoRestante = dto.monto_pagado;
+            // MONEYPINE-FIX: acumular pagos del mismo día para evaluar si alcanzan el periodo
+            var diaInicio = fechaPago.Date;
+            var diaFin    = diaInicio.AddDays(1);
+            decimal pagoAcumulado = await _context.Pagos
+                .Where(p => p.prestamo_id == dto.prestamo_id
+                         && p.fecha_pago >= diaInicio
+                         && p.fecha_pago < diaFin
+                         && p.estatus == EstatusPago.APLICADO)
+                .SumAsync(p => (decimal?)p.monto_pagado) ?? 0m;
+
+            decimal pagoRestante = dto.monto_pagado + pagoAcumulado;
 
             // ================================
             // 3. ITERAR PERIODOS: marcar como pagado si el monto alcanza
