@@ -214,6 +214,71 @@ using (var scope = app.Services.CreateScope())
     await db.SaveChangesAsync();
 }
 
+// =======================
+// MONEYPINE-FIX: crear tablas del módulo de ahorro si no existen
+// MySQL 9.4 en Railway soporta CREATE TABLE IF NOT EXISTS (idempotente)
+// =======================
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+    await db.Database.ExecuteSqlRawAsync(@"
+        CREATE TABLE IF NOT EXISTS producto_ahorro (
+            id         INT          NOT NULL AUTO_INCREMENT PRIMARY KEY,
+            nombre     VARCHAR(100) NOT NULL,
+            tasa_anual DECIMAL(8,2) NOT NULL DEFAULT 0.00,
+            plazo_dias INT          NOT NULL DEFAULT 365,
+            descripcion VARCHAR(300) NULL,
+            activo     TINYINT(1)   NOT NULL DEFAULT 1,
+            created_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+    ");
+
+    await db.Database.ExecuteSqlRawAsync(@"
+        CREATE TABLE IF NOT EXISTS cuenta_ahorro (
+            id                 INT          NOT NULL AUTO_INCREMENT PRIMARY KEY,
+            cliente_id         INT          NOT NULL,
+            producto_ahorro_id INT          NOT NULL,
+            monto_inicial      DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+            saldo_actual       DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+            fecha_apertura     DATE         NOT NULL,
+            fecha_vencimiento  DATE         NOT NULL,
+            estatus            VARCHAR(20)  NOT NULL DEFAULT 'ACTIVA',
+            ejecutivo_id       INT          NULL,
+            created_at         DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT fk_ca_cliente   FOREIGN KEY (cliente_id)        REFERENCES cliente(cliente_id)   ON DELETE RESTRICT,
+            CONSTRAINT fk_ca_producto  FOREIGN KEY (producto_ahorro_id) REFERENCES producto_ahorro(id)  ON DELETE RESTRICT,
+            CONSTRAINT fk_ca_ejecutivo FOREIGN KEY (ejecutivo_id)       REFERENCES usuario(usuario_id)  ON DELETE SET NULL
+        );
+    ");
+
+    await db.Database.ExecuteSqlRawAsync(@"
+        CREATE TABLE IF NOT EXISTS movimiento_ahorro (
+            id               INT          NOT NULL AUTO_INCREMENT PRIMARY KEY,
+            cuenta_ahorro_id INT          NOT NULL,
+            tipo             VARCHAR(20)  NOT NULL,
+            monto            DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+            descripcion      VARCHAR(300) NULL,
+            fecha            DATE         NOT NULL,
+            created_at       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT fk_ma_cuenta FOREIGN KEY (cuenta_ahorro_id) REFERENCES cuenta_ahorro(id) ON DELETE CASCADE
+        );
+    ");
+
+    // Seed: insertar productos de ahorro solo si la tabla está vacía
+    var count = await db.ProductosAhorro.CountAsync();
+    if (count == 0)
+    {
+        await db.Database.ExecuteSqlRawAsync(@"
+            INSERT INTO producto_ahorro (nombre, tasa_anual, plazo_dias, descripcion) VALUES
+              ('AHORRO ORDINARIO',    0.00,  365, 'Ahorro sin rendimiento, plazo anual'),
+              ('AHORRO CRECEMAX',    10.00,  180, 'Rendimiento del 10% anual, plazo 180 dias'),
+              ('Inversion 60',       60.00,   60, 'Rendimiento del 60% anual, plazo 60 dias'),
+              ('Ahorro CreceMax 120',120.00, 120, 'Rendimiento del 120% anual, plazo 120 dias');
+        ");
+    }
+}
+
 var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
 app.Urls.Add($"http://*:{port}");
 

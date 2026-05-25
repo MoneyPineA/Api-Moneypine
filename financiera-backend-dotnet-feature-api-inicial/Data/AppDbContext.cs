@@ -26,6 +26,11 @@ namespace ApiEjemplo.Data
         public DbSet<PeriodoAmortizacion> PeriodosAmortizacion { get; set; } // MONEYPINE-FIX: tabla amortización legada
         public DbSet<ProductoCredito> ProductosCredito { get; set; }
 
+        // Módulo Ahorro
+        public DbSet<ProductoAhorro>    ProductosAhorro    { get; set; }
+        public DbSet<CuentaAhorro>      CuentasAhorro      { get; set; }
+        public DbSet<MovimientoAhorro>  MovimientosAhorro  { get; set; }
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
@@ -152,6 +157,35 @@ namespace ApiEjemplo.Data
 
             // MONEYPINE-FIX: Railway usa tabla 'notifications' (minúsculas), no 'Notifications'
             modelBuilder.Entity<Notification>().ToTable("notifications");
+
+            // =======================
+            // MÓDULO AHORRO
+            // =======================
+            modelBuilder.Entity<CuentaAhorro>(entity =>
+            {
+                entity.Property(c => c.estatus)
+                      .HasConversion<string>()
+                      .HasDefaultValue(EstatusAhorro.ACTIVA)
+                      .IsRequired();
+            });
+
+            modelBuilder.Entity<CuentaAhorro>()
+                .HasOne(c => c.Cliente)
+                .WithMany()
+                .HasForeignKey(c => c.cliente_id)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<CuentaAhorro>()
+                .HasOne(c => c.Producto)
+                .WithMany(p => p.Cuentas)
+                .HasForeignKey(c => c.producto_ahorro_id)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<MovimientoAhorro>()
+                .HasOne(m => m.Cuenta)
+                .WithMany(c => c.Movimientos)
+                .HasForeignKey(m => m.cuenta_ahorro_id)
+                .OnDelete(DeleteBehavior.Cascade);
 
             // Description y UserId añadidos a Railway con ALTER TABLE (2026-05-24)
         }
