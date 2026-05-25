@@ -253,6 +253,7 @@ namespace ApiEjemplo.Controllers
                        (p.Cliente.Usuario.apellido ?? "") + " " +
                        (p.Cliente.apellido_materno ?? "")).Trim()
                     : "Cliente #" + p.cliente_id,
+                ruta_vinculacion = p.Cliente != null ? p.Cliente.ruta_vinculacion : null, // MONEYPINE-FIX: exponer ruta del cliente en detalle de crédito
                 curp             = p.Cliente != null ? p.Cliente.curp                : null,
                 rfc              = p.Cliente != null ? p.Cliente.rfc                 : null,
                 telefono         = p.Cliente != null ? p.Cliente.telefono_particular : null,
