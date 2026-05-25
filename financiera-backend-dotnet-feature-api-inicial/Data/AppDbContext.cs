@@ -24,6 +24,7 @@ namespace ApiEjemplo.Data
         public DbSet<GestionCobranza> GestionesCobranza { get; set; }
         public DbSet<NotificacionAgendada> NotificacionesAgendadas { get; set; }
         public DbSet<PeriodoAmortizacion> PeriodosAmortizacion { get; set; } // MONEYPINE-FIX: tabla amortización legada
+        public DbSet<ProductoCredito> ProductosCredito { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
