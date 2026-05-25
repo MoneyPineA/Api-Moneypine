@@ -314,6 +314,23 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
+// =======================
+// MONEYPINE-FIX: tabla buro_exclusion — persiste qué clientes fueron quitados del buró
+// Permite que un admin quite a un cliente y el cambio se refleje en todos los admins
+// =======================
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    await db.Database.ExecuteSqlRawAsync(@"
+        CREATE TABLE IF NOT EXISTS buro_exclusion (
+            cliente_id   INT          NOT NULL PRIMARY KEY,
+            excluido_por INT          NULL,
+            fecha        DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            motivo       VARCHAR(300) NOT NULL DEFAULT 'Excluido por administrador'
+        );
+    ");
+}
+
 var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
 app.Urls.Add($"http://*:{port}");
 

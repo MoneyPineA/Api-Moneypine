@@ -34,6 +34,9 @@ namespace ApiEjemplo.Data
         // MONEYPINE-FIX: biblioteca de conceptos del sistema (gastos/ingresos dinámicos)
         public DbSet<ConceptoSistema>   ConceptosSistema   { get; set; }
 
+        // MONEYPINE-FIX: exclusiones del buró de crédito (persistencia cross-admin)
+        public DbSet<BuroExclusion>     BuroExclusiones    { get; set; }
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
