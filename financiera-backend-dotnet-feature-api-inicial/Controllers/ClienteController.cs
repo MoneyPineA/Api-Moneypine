@@ -45,6 +45,7 @@ namespace ApiEjemplo.Controllers
                     apellido_materno   = c.apellido_materno,
                     correo_usuario     = c.Usuario != null ? c.Usuario.correo    : null,
                     telefono_usuario   = c.Usuario != null ? c.Usuario.telefono  : null,
+                    estado_usuario     = c.Usuario != null ? c.Usuario.estado.ToString() : null, // MONEYPINE-FIX: exponer estado del usuario
                     sexo               = c.sexo,
                     estado_civil       = c.estado_civil,
                     lugar_nacimiento   = c.lugar_nacimiento,

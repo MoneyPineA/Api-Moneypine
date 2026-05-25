@@ -15,6 +15,7 @@ namespace ApiEjemplo.DTOs.Cliente
         public string? apellido_materno    { get; set; }
         public string? correo_usuario      { get; set; }
         public string? telefono_usuario    { get; set; }
+        public string? estado_usuario      { get; set; } // MONEYPINE-FIX: estado del usuario (ACTIVO/INACTIVO/BLOQUEADO)
 
         public string? sexo                { get; set; }
         public string? estado_civil        { get; set; }
