@@ -279,6 +279,41 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
+// =======================
+// MONEYPINE-FIX: crear tabla concepto_sistema si no existe + seed de 8 gastos base
+// =======================
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+    await db.Database.ExecuteSqlRawAsync(@"
+        CREATE TABLE IF NOT EXISTS concepto_sistema (
+            id         INT          NOT NULL AUTO_INCREMENT PRIMARY KEY,
+            nombre     VARCHAR(100) NOT NULL,
+            tipo       VARCHAR(20)  NOT NULL DEFAULT 'GASTO',
+            activo     TINYINT(1)   NOT NULL DEFAULT 1,
+            orden      INT          NOT NULL DEFAULT 0,
+            created_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+    ");
+
+    var count = await db.ConceptosSistema.CountAsync();
+    if (count == 0)
+    {
+        await db.Database.ExecuteSqlRawAsync(@"
+            INSERT INTO concepto_sistema (nombre, tipo, orden) VALUES
+              ('Alimento',          'GASTO', 1),
+              ('Luz',               'GASTO', 2),
+              ('Teléfono',          'GASTO', 3),
+              ('Transporte',        'GASTO', 4),
+              ('Renta',             'GASTO', 5),
+              ('Inversión negocio', 'GASTO', 6),
+              ('Créditos',          'GASTO', 7),
+              ('Otros',             'GASTO', 8);
+        ");
+    }
+}
+
 var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
 app.Urls.Add($"http://*:{port}");
 

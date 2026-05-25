@@ -31,6 +31,9 @@ namespace ApiEjemplo.Data
         public DbSet<CuentaAhorro>      CuentasAhorro      { get; set; }
         public DbSet<MovimientoAhorro>  MovimientosAhorro  { get; set; }
 
+        // MONEYPINE-FIX: biblioteca de conceptos del sistema (gastos/ingresos dinámicos)
+        public DbSet<ConceptoSistema>   ConceptosSistema   { get; set; }
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
