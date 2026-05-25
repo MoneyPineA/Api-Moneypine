@@ -229,10 +229,11 @@ namespace ApiEjemplo.Controllers
                 {
                     _context.ActivityLogs.Add(new ActivityLog
                     {
-                        Type = ActivityType.PAYMENT_OVERDUE,
-                        ClientId = prestamo.cliente_id,
-                        Amount = prestamo.saldo_actual,
-                        Priority = NotificationLevel.HIGH
+                        Type        = ActivityType.PAYMENT_OVERDUE,
+                        ClientId    = prestamo.cliente_id,
+                        Amount      = prestamo.saldo_actual,
+                        Priority    = NotificationLevel.HIGH,
+                        Description = $"Pago vencido en cr\u00e9dito #{prestamo.prestamo_id} — ${prestamo.saldo_actual:N2} en atraso"
                     });
                 }
             }

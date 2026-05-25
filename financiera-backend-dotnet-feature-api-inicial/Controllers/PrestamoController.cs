@@ -6,6 +6,7 @@ using ApiEjemplo.Enums;
 using ApiEjemplo.Helpers;
 using ApiEjemplo.Services;
 using ApiEjemplo.DTOs.Prestamo;
+using System.Security.Claims;
 
 namespace ApiEjemplo.Controllers
 {
@@ -89,11 +90,25 @@ namespace ApiEjemplo.Controllers
             prestamo.estatus = EstatusPrestamo.ACTIVO;
             await _context.SaveChangesAsync();
 
+            int? userIdAprobar = null;
+            if (int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var parsedAprobar))
+                userIdAprobar = parsedAprobar;
+
+            var nombreClienteAprobar = await _context.Clientes
+                .Where(c => c.cliente_id == prestamo.cliente_id)
+                .Include(c => c.Usuario)
+                .Select(c => c.Usuario != null
+                    ? $"{c.Usuario.nombre} {c.Usuario.apellido}"
+                    : $"Cliente #{prestamo.cliente_id}")
+                .FirstOrDefaultAsync() ?? $"Cliente #{prestamo.cliente_id}";
+
             await _activityService.CreateActivity(
                 ActivityType.CREDIT_APPROVED,
                 prestamo.cliente_id,
                 prestamo.monto,
-                NotificationLevel.POSITIVE
+                NotificationLevel.POSITIVE,
+                description: $"Crédito #{prestamo.prestamo_id} aperturado por ${prestamo.monto:N2} a nombre de {nombreClienteAprobar}",
+                userId: userIdAprobar
             );
             await _notificationService.CreateNotification(
                 1, "Préstamo #" + id + " aprobado y activado", NotificationLevel.POSITIVE);
@@ -117,6 +132,18 @@ namespace ApiEjemplo.Controllers
             prestamo.estatus = EstatusPrestamo.CANCELADO;
             await _context.SaveChangesAsync();
 
+            int? userIdCancelar = null;
+            if (int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var parsedCancelar))
+                userIdCancelar = parsedCancelar;
+
+            await _activityService.CreateActivity(
+                ActivityType.CUSTOM,
+                prestamo.cliente_id,
+                prestamo.saldo_actual,
+                NotificationLevel.NEUTRAL,
+                description: $"Crédito #{prestamo.prestamo_id} marcado como cancelado",
+                userId: userIdCancelar
+            );
             await _notificationService.CreateNotification(
                 1, "Préstamo #" + id + " cancelado", NotificationLevel.NEUTRAL);
 

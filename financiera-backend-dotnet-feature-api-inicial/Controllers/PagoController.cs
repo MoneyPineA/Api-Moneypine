@@ -377,11 +377,21 @@ namespace ApiEjemplo.Controllers
             await _context.SaveChangesAsync();
             await transaction.CommitAsync();
 
+            var nombreClientePago = await _context.Clientes
+                .Where(c => c.cliente_id == prestamo.cliente_id)
+                .Include(c => c.Usuario)
+                .Select(c => c.Usuario != null
+                    ? $"{c.Usuario.nombre} {c.Usuario.apellido}"
+                    : $"Cliente #{prestamo.cliente_id}")
+                .FirstOrDefaultAsync() ?? $"Cliente #{prestamo.cliente_id}";
+
             await _activityService.CreateActivity(
                 ActivityType.PAYMENT_RECEIVED,
                 prestamo.cliente_id,
                 capitalPagado + interesPagado + moraPagada,
-                NotificationLevel.POSITIVE
+                NotificationLevel.POSITIVE,
+                description: $"Pago de ${dto.monto_pagado:N2} aplicado al crédito #{prestamo.prestamo_id} del cliente {nombreClientePago}",
+                userId: usuarioAplicadorId
             );
 
             var msg = prestamo.estatus == EstatusPrestamo.LIQUIDADO
