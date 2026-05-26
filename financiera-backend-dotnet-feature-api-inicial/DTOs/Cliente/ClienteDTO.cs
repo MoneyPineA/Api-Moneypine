@@ -13,6 +13,8 @@ namespace ApiEjemplo.DTOs.Cliente
         public string? nombre_usuario      { get; set; }
         public string? apellido_usuario    { get; set; }
         public string? apellido_materno    { get; set; }
+        // MONEYPINE-FIX: apellido_paterno separado (cliente.apellido_paterno) para Excel del Buró
+        public string? apellido_paterno    { get; set; }
         public string? correo_usuario      { get; set; }
         public string? telefono_usuario    { get; set; }
         public string? estado_usuario      { get; set; } // MONEYPINE-FIX: estado del usuario (ACTIVO/INACTIVO/BLOQUEADO)

@@ -43,6 +43,7 @@ namespace ApiEjemplo.Controllers
                     nombre_usuario     = c.Usuario != null ? c.Usuario.nombre    : null,
                     apellido_usuario   = c.Usuario != null ? c.Usuario.apellido  : null,
                     apellido_materno   = c.apellido_materno,
+                    apellido_paterno   = c.apellido_paterno,  // MONEYPINE-FIX: campo separado para Excel del Buró
                     correo_usuario     = c.Usuario != null ? c.Usuario.correo    : null,
                     telefono_usuario   = c.Usuario != null ? c.Usuario.telefono  : null,
                     estado_usuario     = c.Usuario != null ? c.Usuario.estado.ToString() : null, // MONEYPINE-FIX: exponer estado del usuario

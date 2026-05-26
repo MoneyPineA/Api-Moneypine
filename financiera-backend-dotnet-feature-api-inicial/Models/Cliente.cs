@@ -21,6 +21,8 @@ namespace ApiEjemplo.Models
         public bool permitir_acceso_web { get; set; } = false;
 
         public string? apellido_materno { get; set; }
+        // MONEYPINE-FIX: apellido paterno separado — existe en la tabla Railway (varchar 20)
+        public string? apellido_paterno { get; set; }
         public string? sexo { get; set; }
         public string? estado_civil { get; set; }
         public string? lugar_nacimiento { get; set; }
