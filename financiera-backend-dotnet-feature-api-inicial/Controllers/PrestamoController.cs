@@ -10,6 +10,12 @@ using System.Security.Claims;
 
 namespace ApiEjemplo.Controllers
 {
+    // MONEYPINE-FIX: DTO mínimo para el body de PATCH /aprobar
+    public class AprobarBodyDto
+    {
+        public string? administrado_en { get; set; }
+    }
+
     [ApiController]
     [Route("api/[controller]")]
     public class PrestamoController : ControllerBase
@@ -67,7 +73,8 @@ namespace ApiEjemplo.Controllers
                     p.destino,
                     tipo_solicitud = p.grupo_id.HasValue ? "PRÉSTAMO GRUPAL" : "PRÉSTAMO PERSONAL",
                     p.grupo_id,
-                    grupo_nombre = p.Grupo != null ? p.Grupo.nombre : null
+                    grupo_nombre = p.Grupo != null ? p.Grupo.nombre : null,
+                    administrado_en = p.administrado_en ?? "SINF" // MONEYPINE-FIX: sistema fiscal
                 })
                 .ToListAsync();
 
@@ -79,7 +86,7 @@ namespace ApiEjemplo.Controllers
         // Aprueba un préstamo PENDIENTE → ACTIVO
         // =====================================================
         [HttpPatch("{id}/aprobar")]
-        public async Task<IActionResult> Aprobar(int id)
+        public async Task<IActionResult> Aprobar(int id, [FromBody] AprobarBodyDto? body = null)
         {
             var prestamo = await _context.Prestamos.FindAsync(id);
             if (prestamo == null)
@@ -88,6 +95,9 @@ namespace ApiEjemplo.Controllers
                 return BadRequest("Solo se pueden aprobar préstamos en estado PENDIENTE");
 
             prestamo.estatus = EstatusPrestamo.ACTIVO;
+            // MONEYPINE-FIX: guardar sistema fiscal al aprobar el crédito
+            if (body?.administrado_en != null)
+                prestamo.administrado_en = body.administrado_en;
             await _context.SaveChangesAsync();
 
             int? userIdAprobar = null;
@@ -179,6 +189,18 @@ namespace ApiEjemplo.Controllers
                 .Include(x => x.Grupo)
                 .FirstOrDefaultAsync(x => x.prestamo_id == id);
 
+            // MONEYPINE-FIX: cargar avales del préstamo con nombre de cada garante
+            var avalesData = await _context.PrestamosAvales
+                .Where(a => a.prestamo_id == id)
+                .Include(a => a.Aval).ThenInclude(c => c!.Usuario)
+                .Select(a => new {
+                    cliente_id_aval = a.cliente_id_aval,
+                    nombre = a.Aval != null && a.Aval.Usuario != null
+                        ? ((a.Aval.Usuario.nombre ?? "") + " " + (a.Aval.Usuario.apellido ?? "")).Trim()
+                        : "Aval #" + a.cliente_id_aval
+                })
+                .ToListAsync();
+
             if (p == null)
                 return NotFound("Préstamo no encontrado");
 
@@ -265,6 +287,8 @@ namespace ApiEjemplo.Controllers
                 estado_domicilio = p.Cliente != null ? p.Cliente.estado_domicilio    : null,
                 municipio        = p.Cliente != null ? p.Cliente.municipio           : null,
                 num_ext          = p.Cliente != null ? p.Cliente.num_ext             : null,
+                avales           = avalesData, // MONEYPINE-FIX: garantes del préstamo
+                administrado_en  = p.administrado_en ?? "SINF", // MONEYPINE-FIX: sistema fiscal del crédito
             });
         }
 
@@ -345,12 +369,31 @@ namespace ApiEjemplo.Controllers
                 tb_interes_moratorio = dto.tb_interes_moratorio,
                 tipo_tasa_moratorio  = dto.tipo_tasa_moratorio,
                 destino              = dto.destino,
+                administrado_en      = dto.administrado_en ?? "SINF", // MONEYPINE-FIX: sistema fiscal
 
                 estatus = EstatusPrestamo.PENDIENTE
             };
 
             _context.Prestamos.Add(prestamo);
             await _context.SaveChangesAsync();
+
+            // MONEYPINE-FIX: guardar avales (clientes garantes) del préstamo
+            if (dto.avales != null && dto.avales.Count > 0)
+            {
+                foreach (var clienteAvalId in dto.avales)
+                {
+                    var avalExiste = await _context.Clientes.AnyAsync(c => c.cliente_id == clienteAvalId);
+                    if (avalExiste)
+                    {
+                        _context.PrestamosAvales.Add(new PrestamoAval
+                        {
+                            prestamo_id    = prestamo.prestamo_id,
+                            cliente_id_aval = clienteAvalId,
+                        });
+                    }
+                }
+                await _context.SaveChangesAsync();
+            }
 
             await _activityService.CreateActivity(
             ActivityType.CREDIT_APPROVED,
@@ -423,6 +466,10 @@ namespace ApiEjemplo.Controllers
             // Cuenta desembolso
             prestamo.nombre_banco = dto.nombre_banco;
             prestamo.num_cuenta   = dto.num_cuenta;
+
+            // MONEYPINE-FIX: sistema fiscal
+            if (dto.administrado_en != null)
+                prestamo.administrado_en = dto.administrado_en;
 
             // Ruta vinculada → actualizar el Cliente asociado
             if (prestamo.Cliente != null && dto.ruta_vinculacion != null)

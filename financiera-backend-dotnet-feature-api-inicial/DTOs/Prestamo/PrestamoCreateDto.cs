@@ -22,4 +22,10 @@ public class PrestamoCreateDTO
     public string? tipo_tasa_moratorio { get; set; }
     public decimal? moratorio_por_dia { get; set; }
     public string? destino { get; set; }
+
+    // MONEYPINE-FIX: lista de cliente_id que actúan como avales del préstamo
+    public List<int>? avales { get; set; }
+
+    // MONEYPINE-FIX: sistema fiscal que administra el crédito (SINF/SINB/COFI)
+    public string? administrado_en { get; set; }
 }

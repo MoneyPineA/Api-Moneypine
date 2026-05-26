@@ -151,6 +151,10 @@ namespace ApiEjemplo.Models
         [MaxLength(100)]
         public string? num_cuenta { get; set; }
 
+        // MONEYPINE-FIX: sistema fiscal que administra el crédito (SINF/SINB/COFI)
+        [MaxLength(10)]
+        public string? administrado_en { get; set; } = "SINF";
+
         // Grupo (prestamo grupal)
         public int? grupo_id { get; set; }
 

@@ -37,6 +37,9 @@ namespace ApiEjemplo.Data
         // MONEYPINE-FIX: exclusiones del buró de crédito (persistencia cross-admin)
         public DbSet<BuroExclusion>     BuroExclusiones    { get; set; }
 
+        // MONEYPINE-FIX: avales por préstamo
+        public DbSet<PrestamoAval>      PrestamosAvales    { get; set; }
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
@@ -194,6 +197,22 @@ namespace ApiEjemplo.Data
                 .OnDelete(DeleteBehavior.Cascade);
 
             // Description y UserId añadidos a Railway con ALTER TABLE (2026-05-24)
+
+            // =======================
+            // PRESTAMO AVAL
+            // =======================
+            // MONEYPINE-FIX: relación prestamo → avales (clientes garantes)
+            modelBuilder.Entity<PrestamoAval>()
+                .HasOne(a => a.Prestamo)
+                .WithMany()
+                .HasForeignKey(a => a.prestamo_id)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<PrestamoAval>()
+                .HasOne(a => a.Aval)
+                .WithMany()
+                .HasForeignKey(a => a.cliente_id_aval)
+                .OnDelete(DeleteBehavior.Restrict);
         }
     }
 }
