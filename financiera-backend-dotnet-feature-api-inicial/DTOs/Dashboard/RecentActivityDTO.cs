@@ -17,5 +17,8 @@ namespace ApiEjemplo.DTOs.Dashboard
         public string Color { get; set; } = string.Empty;
 
         public DateTime CreatedAt { get; set; }
+
+        // MONEYPINE-FIX: prestamo_id extraído del Description para que el frontend muestre Ref. #prestamo, no #cliente
+        public string? PrestamoId { get; set; }
     }
 }

@@ -284,7 +284,11 @@ namespace ApiEjemplo.Controllers
                 NotificationLevel.POSITIVE => "green",
                 _ => "gray"
             },
-            CreatedAt = a.CreatedAt
+            CreatedAt = a.CreatedAt,
+            // MONEYPINE-FIX: extrae prestamo_id del Description para que Ref. muestre el préstamo, no el cliente
+            PrestamoId = a.Description != null
+                ? System.Text.RegularExpressions.Regex.Match(a.Description, @"#(\d+)").Groups[1].Value
+                : null
         }).ToList();
 
             return Ok(new { results = activities });
