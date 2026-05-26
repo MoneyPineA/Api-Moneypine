@@ -40,6 +40,9 @@ namespace ApiEjemplo.Data
         // MONEYPINE-FIX: avales por préstamo
         public DbSet<PrestamoAval>      PrestamosAvales    { get; set; }
 
+        // MONEYPINE-FIX: clientes auto-reportados al buró por mora >= 90 días
+        public DbSet<BuroAutoReporte>   BuroAutoReportes   { get; set; }
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
