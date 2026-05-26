@@ -253,8 +253,16 @@ namespace ApiEjemplo.Controllers
                     a.Type != ActivityType.PAYMENT_OVERDUE ||
                     clientesConPrestamoActivo.Contains(a.ClientId))
                 .OrderByDescending(a => a.CreatedAt)
-                .Take(10)
+                .Take(50)
                 .ToListAsync();
+
+            // MONEYPINE-FIX: deduplicar PAYMENT_OVERDUE — solo el más reciente por cliente
+            logs = logs
+                .GroupBy(a => a.Type == ActivityType.PAYMENT_OVERDUE ? a.ClientId : a.Id)
+                .Select(g => g.OrderByDescending(x => x.CreatedAt).First())
+                .OrderByDescending(a => a.CreatedAt)
+                .Take(10)
+                .ToList();
 
         var activities = logs.Select(a => new RecentActivityDTO
         {
