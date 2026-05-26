@@ -214,6 +214,7 @@ namespace ApiEjemplo.Controllers
                 .Where(p =>
                     p.estatus == EstatusPrestamo.ACTIVO &&
                     p.fecha_proximo_pago != null &&
+                    p.saldo_actual > 0 && // MONEYPINE-FIX: excluir préstamos con saldo cero
                     now > p.fecha_proximo_pago.Value.AddDays(p.dias_gracia))
                 .ToListAsync();
 
