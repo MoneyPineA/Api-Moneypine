@@ -70,6 +70,8 @@ namespace ApiEjemplo.Controllers
                     p.forma_pago,
                     p.estatus,
                     p.fecha_creacion,
+                    p.fecha_inicio, // MONEYPINE-FIX: exponer para ConsultaMovimientos
+                    p.fecha_fin,    // MONEYPINE-FIX: exponer para ConsultaMovimientos
                     p.destino,
                     tipo_solicitud = p.grupo_id.HasValue ? "PRÉSTAMO GRUPAL" : "PRÉSTAMO PERSONAL",
                     p.grupo_id,
