@@ -55,6 +55,9 @@ namespace ApiEjemplo.Controllers
                     telefono_particular= c.telefono_particular,
                     direccion          = c.direccion,
                     colonia            = c.colonia,
+                    cp               = c.cp,               // MONEYPINE-FIX: exponer cp para Excel del Buró
+                    municipio        = c.municipio,        // MONEYPINE-FIX: exponer municipio
+                    estado_domicilio = c.estado_domicilio, // MONEYPINE-FIX: exponer estado_domicilio
                     fecha_nacimiento   = c.fecha_nacimiento,
                     curp               = c.curp,
                     rfc                = c.rfc,
