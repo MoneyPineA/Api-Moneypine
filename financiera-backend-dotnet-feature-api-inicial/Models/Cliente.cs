@@ -23,6 +23,8 @@ namespace ApiEjemplo.Models
         public string? apellido_materno { get; set; }
         // MONEYPINE-FIX: apellido paterno separado — existe en la tabla Railway (varchar 20)
         public string? apellido_paterno { get; set; }
+        // MONEYPINE-FIX: ciudad — columna agregada a Railway 2026-05-26
+        public string? ciudad { get; set; }
         public string? sexo { get; set; }
         public string? estado_civil { get; set; }
         public string? lugar_nacimiento { get; set; }

@@ -57,6 +57,7 @@ namespace ApiEjemplo.Controllers
                     colonia            = c.colonia,
                     cp               = c.cp,               // MONEYPINE-FIX: exponer cp para Excel del Buró
                     municipio        = c.municipio,        // MONEYPINE-FIX: exponer municipio
+                    ciudad           = c.ciudad,           // MONEYPINE-FIX: exponer ciudad
                     estado_domicilio = c.estado_domicilio, // MONEYPINE-FIX: exponer estado_domicilio
                     fecha_nacimiento   = c.fecha_nacimiento,
                     curp               = c.curp,

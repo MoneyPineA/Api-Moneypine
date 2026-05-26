@@ -31,6 +31,7 @@ namespace ApiEjemplo.DTOs.Cliente
         // MONEYPINE-FIX: campos de dirección para Excel del Buró
         public string? cp                  { get; set; }
         public string? municipio           { get; set; }
+        public string? ciudad              { get; set; }
         public string? estado_domicilio    { get; set; }
         public DateTime? fecha_nacimiento  { get; set; }
         public string? curp                { get; set; }
