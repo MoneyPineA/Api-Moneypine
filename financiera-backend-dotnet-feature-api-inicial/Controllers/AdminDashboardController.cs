@@ -240,10 +240,20 @@ namespace ApiEjemplo.Controllers
 
             await _context.SaveChangesAsync();
 
+            // MONEYPINE-FIX: excluir PAYMENT_OVERDUE de clientes sin ningún préstamo activo
+            var clientesConPrestamoActivo = await _context.Prestamos
+                .Where(p => p.estatus != EstatusPrestamo.LIQUIDADO)
+                .Select(p => p.cliente_id)
+                .Distinct()
+                .ToListAsync();
+
             var logs = await _context.ActivityLogs
-            .OrderByDescending(a => a.CreatedAt)
-            .Take(10)
-            .ToListAsync();
+                .Where(a =>
+                    a.Type != ActivityType.PAYMENT_OVERDUE ||
+                    clientesConPrestamoActivo.Contains(a.ClientId))
+                .OrderByDescending(a => a.CreatedAt)
+                .Take(10)
+                .ToListAsync();
 
         var activities = logs.Select(a => new RecentActivityDTO
         {
