@@ -626,7 +626,9 @@ namespace ApiEjemplo.Controllers
                     diasMoratorio    = 0;
                 }
 
-                var interes       = p.interes_normal + p.interes_iva;
+                var interesNormal  = p.interes_normal;                        // MONEYPINE-FIX: solo interés sin IVA
+                var interesIVA_val = p.interes_iva;                            // MONEYPINE-FIX: IVA sobre interés
+                var interes        = interesNormal + interesIVA_val;           // MONEYPINE-FIX: total interés (normal + IVA)
                 var pagoProgramado = p.abono_capital + interes;
 
                 return new {
@@ -635,8 +637,8 @@ namespace ApiEjemplo.Controllers
                     saldoPendiente   = p.capital_pendiente + interes + interesMoratorio, // MONEYPINE-FIX: incluye interés + mora
                     capitalPendiente = p.capital_pendiente,
                     abonoCapital     = p.abono_capital,
-                    interes,
-                    interesIVA       = interes,
+                    interes          = interesNormal,                          // MONEYPINE-FIX: solo interés normal (sin IVA)
+                    interesIVA       = interesIVA_val,                         // MONEYPINE-FIX: solo el IVA (antes devolvía total)
                     interesMoratorio,
                     diasMoratorio,
                     saldoFinal       = p.saldo_final,
