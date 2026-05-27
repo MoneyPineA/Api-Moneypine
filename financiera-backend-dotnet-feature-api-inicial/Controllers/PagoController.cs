@@ -281,7 +281,7 @@ namespace ApiEjemplo.Controllers
                 decimal moraPeriodo  = diasMora > 0 ? Math.Round(prestamo.mora_diaria * diasMora, 2) : 0m;
                 decimal costoPeriodo = p.abono_capital + p.interes_normal + p.interes_iva + moraPeriodo;
 
-                if (pagoRestante >= costoPeriodo - 0.01m)
+                if (pagoRestante >= costoPeriodo - 0.05m) // MONEYPINE-FIX: tolerancia 5 centavos para redondeo de mora diaria
                 {
                     aMarcarPagados.Add(p);
                     pagoRestante  -= costoPeriodo;
