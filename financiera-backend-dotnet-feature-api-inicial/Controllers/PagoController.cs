@@ -84,6 +84,7 @@ namespace ApiEjemplo.Controllers
                 metodo_pago          = p.metodo_pago,
                 p.interes_pagado,
                 p.mora_pagada,
+                p.abono_capital, // MONEYPINE-FIX: exponer abono_capital en reporte
                 p.saldo_restante,
                 p.estatus,
             });
@@ -132,6 +133,7 @@ namespace ApiEjemplo.Controllers
                 p.monto_pagado,
                 p.interes_pagado,
                 p.mora_pagada,
+                p.abono_capital, // MONEYPINE-FIX: exponer abono_capital en GET /api/Pago
                 p.saldo_restante,
                 p.metodo_pago,
                 p.estatus
@@ -174,6 +176,7 @@ namespace ApiEjemplo.Controllers
                 pago.monto_pagado,
                 pago.interes_pagado,
                 pago.mora_pagada,
+                pago.abono_capital, // MONEYPINE-FIX: exponer abono_capital en GET /api/Pago/{id}
                 pago.saldo_restante,
                 pago.metodo_pago,
                 pago.estatus
