@@ -248,7 +248,7 @@ namespace ApiEjemplo.Controllers
             decimal interesesPendientes = periodosPendientes
                 .Sum(p => p.interes_normal + p.interes_iva);
             decimal maxPermitido = prestamo.saldo_actual + moraAcumulada + interesesPendientes;
-            if (dto.monto_pagado > maxPermitido)
+            if (dto.monto_pagado > maxPermitido * 1.02m) // MONEYPINE-FIX: margen 2% para redondeo de mora en pago total
                 return BadRequest($"El monto ({dto.monto_pagado:N2}) excede el adeudo total ({maxPermitido:N2}). Saldo: ${prestamo.saldo_actual:N2}, Intereses: ${interesesPendientes:N2}, Mora: ${moraAcumulada:N2}");
 
             // MONEYPINE-FIX: acumular pagos del mismo día para evaluar si alcanzan el periodo
