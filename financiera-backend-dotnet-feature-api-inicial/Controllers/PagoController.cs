@@ -83,6 +83,7 @@ namespace ApiEjemplo.Controllers
                 fecha_real_aplicacion = p.fecha_pago.ToString("yyyy-MM-dd HH:mm:ss"),
                 metodo_pago          = p.metodo_pago,
                 p.interes_pagado,
+                p.interes_iva, // MONEYPINE-FIX: IVA sobre interés en reporte
                 p.mora_pagada,
                 p.abono_capital, // MONEYPINE-FIX: exponer abono_capital en reporte
                 p.saldo_restante,
@@ -132,6 +133,7 @@ namespace ApiEjemplo.Controllers
                 p.fecha_pago,
                 p.monto_pagado,
                 p.interes_pagado,
+                p.interes_iva, // MONEYPINE-FIX: IVA sobre interés en GET /api/Pago
                 p.mora_pagada,
                 p.abono_capital, // MONEYPINE-FIX: exponer abono_capital en GET /api/Pago
                 p.saldo_restante,
@@ -175,6 +177,7 @@ namespace ApiEjemplo.Controllers
                 pago.fecha_pago,
                 pago.monto_pagado,
                 pago.interes_pagado,
+                pago.interes_iva, // MONEYPINE-FIX: IVA sobre interés en GET /api/Pago/{id}
                 pago.mora_pagada,
                 pago.abono_capital, // MONEYPINE-FIX: exponer abono_capital en GET /api/Pago/{id}
                 pago.saldo_restante,

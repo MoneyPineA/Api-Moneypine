@@ -38,6 +38,9 @@ namespace ApiEjemplo.Models
         [Column(TypeName = "decimal(12,2)")]
         public decimal abono_capital { get; set; } = 0;
 
+        [Column(TypeName = "decimal(10,2)")]
+        public decimal interes_iva { get; set; } = 0; // MONEYPINE-FIX: IVA sobre interés
+
         // Método
         public string? metodo_pago { get; set; }
 
