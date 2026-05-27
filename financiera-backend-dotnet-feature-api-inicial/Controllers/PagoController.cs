@@ -244,9 +244,12 @@ namespace ApiEjemplo.Controllers
             // 2. VALIDAR MONTO
             // ================================
 
-            decimal maxPermitido = prestamo.saldo_actual + moraAcumulada;
+            // MONEYPINE-FIX: maxPermitido incluye interés + IVA pendientes (saldo_actual solo tiene capital)
+            decimal interesesPendientes = periodosPendientes
+                .Sum(p => p.interes_normal + p.interes_iva);
+            decimal maxPermitido = prestamo.saldo_actual + moraAcumulada + interesesPendientes;
             if (dto.monto_pagado > maxPermitido)
-                return BadRequest($"El monto ({dto.monto_pagado:N2}) excede el adeudo total ({maxPermitido:N2}). Saldo: ${prestamo.saldo_actual:N2}, Mora: ${moraAcumulada:N2}");
+                return BadRequest($"El monto ({dto.monto_pagado:N2}) excede el adeudo total ({maxPermitido:N2}). Saldo: ${prestamo.saldo_actual:N2}, Intereses: ${interesesPendientes:N2}, Mora: ${moraAcumulada:N2}");
 
             // MONEYPINE-FIX: acumular pagos del mismo día para evaluar si alcanzan el periodo
             var diaInicio = fechaPago.Date;
