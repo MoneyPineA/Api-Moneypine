@@ -73,6 +73,21 @@ namespace ApiEjemplo.Data
                       .HasDefaultValue(EstatusPrestamo.ACTIVO)
                       .IsRequired();
 
+                // MONEYPINE-FIX: Railway almacena forma_pago como MySQL enum (string), no int
+                entity.Property(p => p.forma_pago)
+                      .HasConversion<string>()
+                      .IsRequired();
+            });
+
+            // =======================
+            // GRUPO
+            // =======================
+            modelBuilder.Entity<Grupo>(entity =>
+            {
+                // MONEYPINE-FIX: Railway almacena forma_pago como MySQL enum (string), no int
+                entity.Property(g => g.forma_pago)
+                      .HasConversion<string>()
+                      .IsRequired();
             });
 
             // =======================
