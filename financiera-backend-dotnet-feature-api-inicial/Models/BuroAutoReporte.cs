@@ -1,9 +1,11 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using Microsoft.EntityFrameworkCore;
 
 namespace ApiEjemplo.Models
 {
     [Table("buro_auto_reporte")]
+    [PrimaryKey(nameof(cliente_id), nameof(prestamo_id))]
     public class BuroAutoReporte
     {
         [Key]
