@@ -106,6 +106,11 @@ namespace ApiEjemplo.Controllers
                                   .Where(pa => pa.prestamo_id == bpc.b.prestamo_id && pa.estado_pago == 1 && pa.fecha_vencimiento.Year > 2000)
                                   .OrderBy(pa => pa.fecha_vencimiento)
                                   .Select(pa => (DateTime?)pa.fecha_vencimiento)
+                                  .FirstOrDefault(),
+                              ultimo_pago = _db.Pagos
+                                  .Where(pg => pg.prestamo_id == bpc.b.prestamo_id)
+                                  .OrderByDescending(pg => pg.fecha_pago)
+                                  .Select(pg => (DateTime?)pg.fecha_pago)
                                   .FirstOrDefault()
                           })
                     .OrderBy(x => x.prestamo_id)
@@ -147,9 +152,11 @@ namespace ApiEjemplo.Controllers
                     x.nombre_cliente,
                     x.apellido_usuario,
                     x.numero_pagos_vencidos,
-                    fecha_cierre = x.fecha_fin.HasValue && x.fecha_fin.Value.Year > 2000
+                    fecha_cierre = (x.estatus == "LIQUIDADO" || x.estatus == "CANCELADO")
+                        && x.fecha_fin.HasValue && x.fecha_fin.Value.Year > 2000
                         ? x.fecha_fin.Value.ToString("yyyy-MM-dd")
                         : null,
+                    ultimo_pago = x.ultimo_pago.HasValue ? x.ultimo_pago.Value.ToString("yyyy-MM-dd") : null,
                     fecha_primer_incumplimiento = (x.fecha_primer_incumplimiento.HasValue && x.fecha_primer_incumplimiento.Value.Year > 2000)
                         ? x.fecha_primer_incumplimiento.Value.ToString("yyyy-MM-dd")
                         : (x.fecha_proximo_pago.HasValue && x.fecha_proximo_pago.Value.Year > 2000
