@@ -322,9 +322,6 @@ namespace ApiEjemplo.Controllers
             // CÁLCULOS FINANCIEROS
             // ================================
 
-            decimal montoTotal =
-                dto.monto + (dto.monto * dto.tasa_interes / 100);
-
             decimal freqDiv = dto.forma_pago switch {
                 FormasPago.SEMANAL    => 4m,
                 FormasPago.QUINCENAL  => 2m,
@@ -334,6 +331,7 @@ namespace ApiEjemplo.Controllers
             decimal interesPerPeriodo = dto.monto * dto.tasa_interes / (freqDiv * 100m);
             decimal ivaPerPeriodo     = interesPerPeriodo * 0.16m;
             decimal pagoMes           = Math.Round(dto.monto / dto.plazo_meses + interesPerPeriodo + ivaPerPeriodo, 2);
+            decimal montoTotal        = pagoMes * dto.plazo_meses;
 
             DateTime fechaInicio =
                 fechaCreacion.AddMonths(1);
@@ -356,8 +354,8 @@ namespace ApiEjemplo.Controllers
 
                 monto_total = montoTotal,
 
-                // SALDO INICIAL
-                saldo_actual = montoTotal,
+                // SALDO INICIAL (capital puro, sin interés)
+                saldo_actual = dto.monto,
 
                 pago_mes = pagoMes,
 
@@ -488,9 +486,6 @@ namespace ApiEjemplo.Controllers
             // RECALCULAR DATOS FINANCIEROS
             // ================================
 
-            prestamo.monto_total =
-                prestamo.monto + (prestamo.monto * prestamo.tasa_interes / 100);
-
             decimal freqDivPut = prestamo.forma_pago switch {
                 FormasPago.SEMANAL    => 4m,
                 FormasPago.QUINCENAL  => 2m,
@@ -500,8 +495,10 @@ namespace ApiEjemplo.Controllers
             decimal interesPerPeriodoPut = prestamo.monto * prestamo.tasa_interes / (freqDivPut * 100m);
             decimal ivaPerPeriodoPut     = interesPerPeriodoPut * 0.16m;
             prestamo.pago_mes            = Math.Round(prestamo.monto / prestamo.plazo_meses + interesPerPeriodoPut + ivaPerPeriodoPut, 2);
+            prestamo.monto_total         = prestamo.pago_mes * prestamo.plazo_meses;
 
-            prestamo.saldo_actual = prestamo.monto_total;
+            // SALDO INICIAL (capital puro, sin interés)
+            prestamo.saldo_actual = prestamo.monto;
 
             prestamo.fecha_inicio =
                 prestamo.fecha_creacion.AddMonths(1);
