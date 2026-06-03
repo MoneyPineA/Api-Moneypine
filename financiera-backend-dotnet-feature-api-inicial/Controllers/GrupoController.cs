@@ -128,7 +128,15 @@ namespace ApiEjemplo.Controllers
             // Cálculos financieros comunes
             // ==============================
             decimal montoTotal = dto.monto + (dto.monto * dto.tasa_interes / 100);
-            decimal pagoMes    = Math.Round(montoTotal / dto.plazo_meses, 2);
+            decimal freqDivGrp = dto.forma_pago switch {
+                FormasPago.SEMANAL    => 4m,
+                FormasPago.QUINCENAL  => 2m,
+                FormasPago.CATORCENAL => 2m,
+                _                     => 1m,
+            };
+            decimal interesPerPeriodoGrp = dto.monto * dto.tasa_interes / (freqDivGrp * 100m);
+            decimal ivaPerPeriodoGrp     = interesPerPeriodoGrp * 0.16m;
+            decimal pagoMes              = Math.Round(dto.monto / dto.plazo_meses + interesPerPeriodoGrp + ivaPerPeriodoGrp, 2);
             DateTime fechaInicio = fechaCreacion.AddMonths(1);
             DateTime fechaFin    = fechaInicio.AddMonths(dto.plazo_meses - 1);
             decimal moraDiaria   = dto.moratorio_por_dia.HasValue && dto.moratorio_por_dia.Value > 0

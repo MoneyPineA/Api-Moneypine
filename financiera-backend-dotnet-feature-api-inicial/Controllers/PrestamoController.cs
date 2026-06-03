@@ -325,8 +325,15 @@ namespace ApiEjemplo.Controllers
             decimal montoTotal =
                 dto.monto + (dto.monto * dto.tasa_interes / 100);
 
-            decimal pagoMes =
-                Math.Round(montoTotal / dto.plazo_meses, 2);
+            decimal freqDiv = dto.forma_pago switch {
+                FormasPago.SEMANAL    => 4m,
+                FormasPago.QUINCENAL  => 2m,
+                FormasPago.CATORCENAL => 2m,
+                _                     => 1m,
+            };
+            decimal interesPerPeriodo = dto.monto * dto.tasa_interes / (freqDiv * 100m);
+            decimal ivaPerPeriodo     = interesPerPeriodo * 0.16m;
+            decimal pagoMes           = Math.Round(dto.monto / dto.plazo_meses + interesPerPeriodo + ivaPerPeriodo, 2);
 
             DateTime fechaInicio =
                 fechaCreacion.AddMonths(1);
@@ -484,8 +491,15 @@ namespace ApiEjemplo.Controllers
             prestamo.monto_total =
                 prestamo.monto + (prestamo.monto * prestamo.tasa_interes / 100);
 
-            prestamo.pago_mes =
-                Math.Round(prestamo.monto_total / prestamo.plazo_meses, 2);
+            decimal freqDivPut = prestamo.forma_pago switch {
+                FormasPago.SEMANAL    => 4m,
+                FormasPago.QUINCENAL  => 2m,
+                FormasPago.CATORCENAL => 2m,
+                _                     => 1m,
+            };
+            decimal interesPerPeriodoPut = prestamo.monto * prestamo.tasa_interes / (freqDivPut * 100m);
+            decimal ivaPerPeriodoPut     = interesPerPeriodoPut * 0.16m;
+            prestamo.pago_mes            = Math.Round(prestamo.monto / prestamo.plazo_meses + interesPerPeriodoPut + ivaPerPeriodoPut, 2);
 
             prestamo.saldo_actual = prestamo.monto_total;
 
