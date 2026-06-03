@@ -77,6 +77,8 @@ namespace ApiEjemplo.Controllers
                               saldo_actual      = bpc.p.saldo_actual,
                               administrado_en   = bpc.p.administrado_en,
                               estatus           = bpc.p.estatus.ToString(),
+                              fecha_fin          = (DateTime?)bpc.p.fecha_fin,
+                              fecha_proximo_pago = (DateTime?)bpc.p.fecha_proximo_pago,
                               // cliente
                               apellido_paterno  = bpc.c.apellido_paterno,
                               apellido_materno  = bpc.c.apellido_materno,
@@ -86,7 +88,7 @@ namespace ApiEjemplo.Controllers
                               sexo              = bpc.c.sexo,
                               estado_civil      = bpc.c.estado_civil,
                               empresa_nombre    = bpc.c.empresa_nombre,
-                              calle             = bpc.c.calle,
+                              calle             = string.IsNullOrEmpty(bpc.c.calle) ? bpc.c.direccion : bpc.c.calle,
                               colonia           = bpc.c.colonia,
                               municipio         = bpc.c.municipio,
                               ciudad            = bpc.c.ciudad,
@@ -145,9 +147,14 @@ namespace ApiEjemplo.Controllers
                     x.nombre_cliente,
                     x.apellido_usuario,
                     x.numero_pagos_vencidos,
-                    fecha_primer_incumplimiento = x.fecha_primer_incumplimiento.HasValue && x.fecha_primer_incumplimiento.Value.Year > 2000
+                    fecha_cierre = x.fecha_fin.HasValue && x.fecha_fin.Value.Year > 2000
+                        ? x.fecha_fin.Value.ToString("yyyy-MM-dd")
+                        : null,
+                    fecha_primer_incumplimiento = (x.fecha_primer_incumplimiento.HasValue && x.fecha_primer_incumplimiento.Value.Year > 2000)
                         ? x.fecha_primer_incumplimiento.Value.ToString("yyyy-MM-dd")
-                        : null
+                        : (x.fecha_proximo_pago.HasValue && x.fecha_proximo_pago.Value.Year > 2000
+                            ? x.fecha_proximo_pago.Value.ToString("yyyy-MM-dd")
+                            : null)
                 }));
             }
             catch (Exception ex)
