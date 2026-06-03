@@ -98,11 +98,57 @@ namespace ApiEjemplo.Controllers
                               // usuario
                               nombre_cliente    = u.nombre,
                               apellido_usuario  = u.apellido,
+                              numero_pagos_vencidos = _db.PeriodosAmortizacion
+                                  .Count(pa => pa.prestamo_id == bpc.b.prestamo_id && pa.estado_pago == 1),
+                              fecha_primer_incumplimiento = _db.PeriodosAmortizacion
+                                  .Where(pa => pa.prestamo_id == bpc.b.prestamo_id && pa.estado_pago == 1 && pa.fecha_vencimiento.Year > 2000)
+                                  .OrderBy(pa => pa.fecha_vencimiento)
+                                  .Select(pa => (DateTime?)pa.fecha_vencimiento)
+                                  .FirstOrDefault()
                           })
                     .OrderBy(x => x.prestamo_id)
                     .ToListAsync();
 
-                return Ok(lista);
+                return Ok(lista.Select(x => new {
+                    x.prestamo_id,
+                    x.cliente_id,
+                    x.dias_mora,
+                    x.saldo_pendiente,
+                    x.fecha_reporte,
+                    x.motivo,
+                    x.forma_pago,
+                    x.plazo_meses,
+                    x.pago_mes,
+                    x.fecha_inicio,
+                    x.monto,
+                    x.monto_total,
+                    x.saldo_actual,
+                    x.administrado_en,
+                    x.estatus,
+                    x.apellido_paterno,
+                    x.apellido_materno,
+                    x.fecha_nacimiento,
+                    x.curp,
+                    x.rfc,
+                    x.sexo,
+                    x.estado_civil,
+                    x.empresa_nombre,
+                    x.calle,
+                    x.colonia,
+                    x.municipio,
+                    x.ciudad,
+                    x.cp,
+                    x.telefono,
+                    x.ruta_vinculacion,
+                    x.estado_domicilio,
+                    x.num_ext,
+                    x.nombre_cliente,
+                    x.apellido_usuario,
+                    x.numero_pagos_vencidos,
+                    fecha_primer_incumplimiento = x.fecha_primer_incumplimiento.HasValue && x.fecha_primer_incumplimiento.Value.Year > 2000
+                        ? x.fecha_primer_incumplimiento.Value.ToString("yyyy-MM-dd")
+                        : null
+                }));
             }
             catch (Exception ex)
             {
