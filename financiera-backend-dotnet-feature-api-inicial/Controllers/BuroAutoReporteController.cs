@@ -110,17 +110,17 @@ namespace ApiEjemplo.Controllers
             }
         }
 
-        // DELETE /api/BuroAutoReporte/{clienteId} — quitar un cliente del auto-reporte (manual override)
+        // DELETE /api/BuroAutoReporte/{clienteId} — quitar todos los créditos de un cliente del auto-reporte
         [HttpDelete("{clienteId:int}")]
         public async Task<IActionResult> Quitar(int clienteId)
         {
             try
             {
-                var existing = await _db.BuroAutoReportes.FindAsync(clienteId);
-                if (existing == null) return NotFound();
-                _db.BuroAutoReportes.Remove(existing);
+                var registros = _db.BuroAutoReportes.Where(b => b.cliente_id == clienteId).ToList();
+                if (registros.Count == 0) return NotFound();
+                _db.BuroAutoReportes.RemoveRange(registros);
                 await _db.SaveChangesAsync();
-                return Ok(new { message = "Cliente removido del auto-reporte" });
+                return Ok(new { message = $"Cliente {clienteId} removido del auto-reporte ({registros.Count} registros)" });
             }
             catch (Exception ex)
             {
