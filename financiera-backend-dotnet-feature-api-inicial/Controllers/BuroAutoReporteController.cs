@@ -86,7 +86,7 @@ namespace ApiEjemplo.Controllers
                               sexo              = bpc.c.sexo,
                               estado_civil      = bpc.c.estado_civil,
                               empresa_nombre    = bpc.c.empresa_nombre,
-                              calle             = bpc.c.direccion,
+                              calle             = bpc.c.calle,
                               colonia           = bpc.c.colonia,
                               municipio         = bpc.c.municipio,
                               ciudad            = bpc.c.ciudad,

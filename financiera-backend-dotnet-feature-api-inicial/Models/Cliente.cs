@@ -38,6 +38,8 @@ namespace ApiEjemplo.Models
         public string? estado_domicilio { get; set; }
         public string? municipio { get; set; }
         public string? num_ext { get; set; }
+        // MONEYPINE-FIX: calle separada — columna agregada a Railway via ALTER TABLE
+        public string? calle { get; set; }
         public double? latitud { get; set; }
         public double? longitud { get; set; }
         public DateTime? fecha_nacimiento { get; set; }
