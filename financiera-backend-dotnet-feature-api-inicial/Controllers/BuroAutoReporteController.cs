@@ -1,0 +1,131 @@
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using ApiEjemplo.Data;
+
+namespace ApiEjemplo.Controllers
+{
+    [ApiController]
+    [Route("api/[controller]")]
+    public class BuroAutoReporteController : ControllerBase
+    {
+        private readonly AppDbContext _db;
+
+        public BuroAutoReporteController(AppDbContext db)
+        {
+            _db = db;
+        }
+
+        // GET /api/BuroAutoReporte — lista todos los clientes auto-reportados por mora >= 90 días
+        [HttpGet]
+        public async Task<IActionResult> GetAll()
+        {
+            try
+            {
+                var lista = await _db.BuroAutoReportes
+                    .OrderByDescending(b => b.dias_mora)
+                    .Select(b => new {
+                        b.cliente_id,
+                        b.prestamo_id,
+                        b.dias_mora,
+                        b.saldo_pendiente,
+                        b.motivo,
+                        fecha_reporte = b.fecha_reporte.ToString("yyyy-MM-dd HH:mm"),
+                    })
+                    .ToListAsync();
+
+                return Ok(lista);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = ex.Message, inner = ex.InnerException?.Message });
+            }
+        }
+
+        // GET /api/BuroAutoReporte/exportar — todos los registros con datos completos para el Excel BC
+        [HttpGet("exportar")]
+        public async Task<IActionResult> Exportar()
+        {
+            try
+            {
+                var lista = await _db.BuroAutoReportes
+                    .Join(_db.Prestamos,
+                          b => b.prestamo_id,
+                          p => p.prestamo_id,
+                          (b, p) => new { b, p })
+                    .Join(_db.Clientes,
+                          bp => bp.b.cliente_id,
+                          c => c.cliente_id,
+                          (bp, c) => new { bp.b, bp.p, c })
+                    .Join(_db.Usuarios,
+                          bpc => bpc.c.usuario_id,
+                          u => u.usuario_id,
+                          (bpc, u) => new {
+                              // buro_auto_reporte
+                              prestamo_id       = bpc.b.prestamo_id,
+                              cliente_id        = bpc.b.cliente_id,
+                              dias_mora         = bpc.b.dias_mora,
+                              saldo_pendiente   = bpc.b.saldo_pendiente,
+                              fecha_reporte     = bpc.b.fecha_reporte.ToString("yyyy-MM-dd"),
+                              motivo            = bpc.b.motivo,
+                              // prestamo
+                              forma_pago        = bpc.p.forma_pago.ToString(),
+                              plazo_meses       = bpc.p.plazo_meses,
+                              pago_mes          = bpc.p.pago_mes,
+                              fecha_inicio      = bpc.p.fecha_inicio.ToString("yyyy-MM-dd"),
+                              monto             = bpc.p.monto,
+                              monto_total       = bpc.p.monto_total,
+                              saldo_actual      = bpc.p.saldo_actual,
+                              administrado_en   = bpc.p.administrado_en,
+                              estatus           = bpc.p.estatus.ToString(),
+                              // cliente
+                              apellido_paterno  = bpc.c.apellido_paterno,
+                              apellido_materno  = bpc.c.apellido_materno,
+                              fecha_nacimiento  = bpc.c.fecha_nacimiento.HasValue ? bpc.c.fecha_nacimiento.Value.ToString("yyyy-MM-dd") : null,
+                              curp              = bpc.c.curp,
+                              rfc               = bpc.c.rfc,
+                              sexo              = bpc.c.sexo,
+                              estado_civil      = bpc.c.estado_civil,
+                              empresa_nombre    = bpc.c.empresa_nombre,
+                              calle             = bpc.c.direccion,
+                              colonia           = bpc.c.colonia,
+                              municipio         = bpc.c.municipio,
+                              ciudad            = bpc.c.ciudad,
+                              cp                = bpc.c.cp,
+                              telefono          = bpc.c.telefono_particular,
+                              ruta_vinculacion  = bpc.c.ruta_vinculacion,
+                              estado_domicilio  = bpc.c.estado_domicilio,
+                              num_ext           = bpc.c.num_ext,
+                              // usuario
+                              nombre_cliente    = u.nombre,
+                              apellido_usuario  = u.apellido,
+                          })
+                    .OrderBy(x => x.prestamo_id)
+                    .ToListAsync();
+
+                return Ok(lista);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = ex.Message, inner = ex.InnerException?.Message });
+            }
+        }
+
+        // DELETE /api/BuroAutoReporte/{clienteId} — quitar un cliente del auto-reporte (manual override)
+        [HttpDelete("{clienteId:int}")]
+        public async Task<IActionResult> Quitar(int clienteId)
+        {
+            try
+            {
+                var existing = await _db.BuroAutoReportes.FindAsync(clienteId);
+                if (existing == null) return NotFound();
+                _db.BuroAutoReportes.Remove(existing);
+                await _db.SaveChangesAsync();
+                return Ok(new { message = "Cliente removido del auto-reporte" });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = ex.Message, inner = ex.InnerException?.Message });
+            }
+        }
+    }
+}
