@@ -402,6 +402,50 @@ namespace ApiEjemplo.Controllers
                 await _context.SaveChangesAsync();
             }
 
+            // ================================
+            // GENERAR PERÍODOS DE AMORTIZACIÓN
+            // ================================
+            int freqDays = dto.forma_pago switch {
+                FormasPago.DIARIA      => 1,
+                FormasPago.SEMANAL     => 7,
+                FormasPago.CATORCENAL  => 14,
+                FormasPago.QUINCENAL   => 15,
+                _                      => 0, // MENSUAL → usar AddMonths
+            };
+            bool esMonthly   = freqDays == 0;
+            decimal abonoCapital = Math.Round(dto.monto / dto.plazo_meses, 2);
+
+            var periodosList = new List<PeriodoAmortizacion>();
+            for (int i = 1; i <= dto.plazo_meses; i++)
+            {
+                DateTime fechaInicioP = esMonthly
+                    ? fechaCreacion.AddMonths(i - 1)
+                    : fechaCreacion.AddDays((double)(i - 1) * freqDays);
+                DateTime fechaVencP = esMonthly
+                    ? fechaCreacion.AddMonths(i)
+                    : fechaCreacion.AddDays((double)i * freqDays);
+
+                decimal capitalPendiente = dto.monto - abonoCapital * (i - 1);
+                decimal saldoFinal       = i == dto.plazo_meses ? 0m : Math.Max(0m, dto.monto - abonoCapital * i);
+
+                periodosList.Add(new PeriodoAmortizacion
+                {
+                    prestamo_id       = prestamo.prestamo_id,
+                    periodo           = i,
+                    fecha_inicio      = fechaInicioP,
+                    fecha_vencimiento = fechaVencP,
+                    capital_pendiente = capitalPendiente,
+                    abono_capital     = abonoCapital,
+                    interes_normal    = interesPerPeriodo,
+                    interes_iva       = ivaPerPeriodo,
+                    pago_pactado      = pagoMes,
+                    saldo_final       = saldoFinal,
+                    estado_pago       = 1,
+                });
+            }
+            _context.PeriodosAmortizacion.AddRange(periodosList);
+            await _context.SaveChangesAsync();
+
             await _activityService.CreateActivity(
             ActivityType.CREDIT_APPROVED,
             prestamo.cliente_id,
