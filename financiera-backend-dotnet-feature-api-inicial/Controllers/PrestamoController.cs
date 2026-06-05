@@ -518,6 +518,10 @@ namespace ApiEjemplo.Controllers
             prestamo.nombre_banco = dto.nombre_banco;
             prestamo.num_cuenta   = dto.num_cuenta;
 
+            // MONEYPINE-FIX: fecha de creación editable
+            if (dto.fecha_creacion.HasValue)
+                prestamo.fecha_creacion = dto.fecha_creacion.Value;
+
             // MONEYPINE-FIX: sistema fiscal
             if (dto.administrado_en != null)
                 prestamo.administrado_en = dto.administrado_en;

@@ -9,6 +9,7 @@ namespace ApiEjemplo.DTOs.Prestamo
         public int plazo_meses { get; set; }
         public EstatusPrestamo estatus { get; set; }
         public FormasPago forma_pago { get; set; } = FormasPago.MENSUAL;
+        public DateTime? fecha_creacion { get; set; }
 
         // ── Ruta vinculada (actualiza el Cliente) ──
         public string? ruta_vinculacion { get; set; }
