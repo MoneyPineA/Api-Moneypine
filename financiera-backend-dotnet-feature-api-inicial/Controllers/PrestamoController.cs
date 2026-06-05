@@ -568,6 +568,79 @@ namespace ApiEjemplo.Controllers
         }
 
         // =====================================================
+        // POST: api/Prestamo/{id}/generar-periodos
+        // Genera la tabla de amortización para un crédito que no tiene períodos
+        // =====================================================
+        [HttpPost("{id}/generar-periodos")]
+        public async Task<IActionResult> GenerarPeriodos(int id)
+        {
+            var prestamo = await _context.Prestamos.FindAsync(id);
+            if (prestamo == null)
+                return NotFound("Préstamo no encontrado");
+
+            var yaExisten = await _context.PeriodosAmortizacion
+                .AnyAsync(p => p.prestamo_id == id);
+            if (yaExisten)
+                return BadRequest("Este préstamo ya tiene períodos de amortización generados.");
+
+            int freqDays = prestamo.forma_pago switch {
+                FormasPago.DIARIA      => 1,
+                FormasPago.SEMANAL     => 7,
+                FormasPago.CATORCENAL  => 14,
+                FormasPago.QUINCENAL   => 15,
+                _                      => 0, // MENSUAL
+            };
+            bool esMonthly = freqDays == 0;
+
+            decimal freqDiv = prestamo.forma_pago switch {
+                FormasPago.SEMANAL    => 4m,
+                FormasPago.QUINCENAL  => 2m,
+                FormasPago.CATORCENAL => 2m,
+                _                     => 1m,
+            };
+            decimal interesPerPeriodo = prestamo.monto * prestamo.tasa_interes / (freqDiv * 100m);
+            decimal ivaPerPeriodo     = interesPerPeriodo * 0.16m;
+            decimal abonoCapital      = Math.Round(prestamo.monto / prestamo.plazo_meses, 2);
+            decimal pagoMes           = Math.Round(abonoCapital + interesPerPeriodo + ivaPerPeriodo, 2);
+
+            DateTime fechaBase = prestamo.fecha_creacion;
+
+            var periodosList = new List<PeriodoAmortizacion>();
+            for (int i = 1; i <= prestamo.plazo_meses; i++)
+            {
+                DateTime fechaInicioP = esMonthly
+                    ? fechaBase.AddMonths(i - 1)
+                    : fechaBase.AddDays((double)(i - 1) * freqDays);
+                DateTime fechaVencP = esMonthly
+                    ? fechaBase.AddMonths(i)
+                    : fechaBase.AddDays((double)i * freqDays);
+
+                decimal capitalPendiente = prestamo.monto - abonoCapital * (i - 1);
+                decimal saldoFinal       = i == prestamo.plazo_meses ? 0m : Math.Max(0m, prestamo.monto - abonoCapital * i);
+
+                periodosList.Add(new PeriodoAmortizacion
+                {
+                    prestamo_id       = prestamo.prestamo_id,
+                    periodo           = i,
+                    fecha_inicio      = fechaInicioP,
+                    fecha_vencimiento = fechaVencP,
+                    capital_pendiente = capitalPendiente,
+                    abono_capital     = abonoCapital,
+                    interes_normal    = interesPerPeriodo,
+                    interes_iva       = ivaPerPeriodo,
+                    pago_pactado      = pagoMes,
+                    saldo_final       = saldoFinal,
+                    estado_pago       = 1,
+                });
+            }
+
+            _context.PeriodosAmortizacion.AddRange(periodosList);
+            await _context.SaveChangesAsync();
+
+            return Ok(new { mensaje = $"{periodosList.Count} períodos generados para préstamo #{id}.", total = periodosList.Count });
+        }
+
+        // =====================================================
         // DELETE: api/Prestamo/5
         // Elimina un préstamo (si no está liquidado)
         // =====================================================
