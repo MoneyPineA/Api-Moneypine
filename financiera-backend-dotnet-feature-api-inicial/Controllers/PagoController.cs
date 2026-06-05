@@ -245,8 +245,19 @@ namespace ApiEjemplo.Controllers
             // ================================
 
             // MONEYPINE-FIX: maxPermitido incluye interés + IVA pendientes (saldo_actual solo tiene capital)
-            decimal interesesPendientes = periodosPendientes
-                .Sum(p => p.interes_normal + p.interes_iva);
+            decimal interesesPendientes;
+            if (periodosPendientes.Any())
+            {
+                interesesPendientes = periodosPendientes.Sum(p => p.interes_normal + p.interes_iva);
+            }
+            else
+            {
+                // Sin tabla de amortización: calcular interés proporcional al capital restante
+                decimal interesTotal = prestamo.monto_total - prestamo.monto;
+                interesesPendientes = prestamo.monto > 0
+                    ? Math.Round(interesTotal * (prestamo.saldo_actual / prestamo.monto), 2)
+                    : 0;
+            }
             decimal maxPermitido = prestamo.saldo_actual + moraAcumulada + interesesPendientes;
             if (dto.monto_pagado > maxPermitido * 1.02m) // MONEYPINE-FIX: margen 2% para redondeo de mora en pago total
                 return BadRequest($"El monto ({dto.monto_pagado:N2}) excede el adeudo total ({maxPermitido:N2}). Saldo: ${prestamo.saldo_actual:N2}, Intereses: ${interesesPendientes:N2}, Mora: ${moraAcumulada:N2}");
