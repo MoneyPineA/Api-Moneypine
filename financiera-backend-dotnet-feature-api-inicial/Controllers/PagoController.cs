@@ -284,6 +284,7 @@ namespace ApiEjemplo.Controllers
             var aMarcarPagados = new List<PeriodoAmortizacion>();
             decimal capitalPagado = 0m;
             decimal interesPagado = 0m;
+            decimal ivaPagado     = 0m;
             decimal moraPagada    = 0m;
 
             foreach (var p in periodosPendientes)
@@ -297,7 +298,8 @@ namespace ApiEjemplo.Controllers
                     aMarcarPagados.Add(p);
                     pagoRestante  -= costoPeriodo;
                     capitalPagado += p.abono_capital;
-                    interesPagado += p.interes_normal + p.interes_iva;
+                    interesPagado += p.interes_normal;
+                    ivaPagado     += p.interes_iva;
                     moraPagada    += moraPeriodo;
 
                     p.estado_pago       = 3;
@@ -384,6 +386,7 @@ namespace ApiEjemplo.Controllers
                 fecha_pago     = fechaPago,
                 monto_pagado   = dto.monto_pagado,
                 interes_pagado = interesPagado,
+                interes_iva    = ivaPagado,
                 mora_pagada    = moraPagada,
                 abono_capital  = capitalPagado,
                 saldo_restante = prestamo.saldo_actual,
