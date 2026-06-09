@@ -342,13 +342,20 @@ namespace ApiEjemplo.Controllers
         // =====================================================
         [Authorize]
         [HttpPost("recalcular-mora-diaria")]
-        public async Task<IActionResult> RecalcularMoraDiaria()
+        public async Task<IActionResult> RecalcularMoraDiaria([FromQuery] bool soloVigentes = false)
         {
-            var prestamos = await _context.Prestamos
-                .Where(p => p.pago_mes > 0 && p.tasa_interes > 0)
-                .ToListAsync();
+            var query = _context.Prestamos
+                .Where(p => p.pago_mes > 0 && p.tasa_interes > 0);
+
+            if (soloVigentes)
+                query = query.Where(p =>
+                    p.estatus == EstatusPrestamo.ACTIVO ||
+                    p.estatus == EstatusPrestamo.ATRASADO);
+
+            var prestamos = await query.ToListAsync();
 
             int actualizados = 0;
+            int omitidos     = 0;
             foreach (var p in prestamos)
             {
                 var moraNueva = Math.Round(p.pago_mes * (p.tasa_interes * 12m * 2m / 100m) / 360m, 2);
@@ -357,13 +364,16 @@ namespace ApiEjemplo.Controllers
                     p.mora_diaria = moraNueva;
                     actualizados++;
                 }
+                else omitidos++;
             }
 
             await _context.SaveChangesAsync();
 
             return Ok(new {
                 mensaje      = $"{actualizados} créditos actualizados con fórmula CONDUSEF.",
+                filtro       = soloVigentes ? "ACTIVO + ATRASADO" : "TODOS",
                 actualizados,
+                omitidos,
             });
         }
     }
