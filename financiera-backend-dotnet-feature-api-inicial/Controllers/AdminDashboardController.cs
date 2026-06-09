@@ -293,5 +293,67 @@ namespace ApiEjemplo.Controllers
 
             return Ok(new { results = activities });
         }
+
+        // =====================================================
+        // GET: api/admin/dashboard/preview-mora-diaria
+        // Muestra créditos cuya mora_diaria difiere del cálculo CONDUSEF
+        // =====================================================
+        [HttpGet("preview-mora-diaria")]
+        public async Task<IActionResult> PreviewMoraDiaria()
+        {
+            var prestamos = await _context.Prestamos
+                .Where(p => p.pago_mes > 0 && p.tasa_interes > 0)
+                .Select(p => new {
+                    p.prestamo_id,
+                    p.pago_mes,
+                    p.tasa_interes,
+                    mora_actual  = p.mora_diaria,
+                    mora_nueva   = Math.Round(p.pago_mes * (p.tasa_interes * 12m * 2m / 100m) / 360m, 2),
+                    p.estatus,
+                    p.administrado_en,
+                })
+                .ToListAsync();
+
+            var cambios = prestamos
+                .Where(p => Math.Abs(p.mora_actual - p.mora_nueva) > 0.01m)
+                .OrderByDescending(p => p.prestamo_id)
+                .ToList();
+
+            return Ok(new {
+                total_a_cambiar = cambios.Count,
+                preview         = cambios.Take(50),
+            });
+        }
+
+        // =====================================================
+        // POST: api/admin/dashboard/recalcular-mora-diaria
+        // Actualiza mora_diaria con fórmula CONDUSEF en todos los créditos
+        // =====================================================
+        [Authorize]
+        [HttpPost("recalcular-mora-diaria")]
+        public async Task<IActionResult> RecalcularMoraDiaria()
+        {
+            var prestamos = await _context.Prestamos
+                .Where(p => p.pago_mes > 0 && p.tasa_interes > 0)
+                .ToListAsync();
+
+            int actualizados = 0;
+            foreach (var p in prestamos)
+            {
+                var moraNueva = Math.Round(p.pago_mes * (p.tasa_interes * 12m * 2m / 100m) / 360m, 2);
+                if (Math.Abs(p.mora_diaria - moraNueva) > 0.01m)
+                {
+                    p.mora_diaria = moraNueva;
+                    actualizados++;
+                }
+            }
+
+            await _context.SaveChangesAsync();
+
+            return Ok(new {
+                mensaje      = $"{actualizados} créditos actualizados con fórmula CONDUSEF.",
+                actualizados,
+            });
+        }
     }
 }
