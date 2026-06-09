@@ -339,9 +339,7 @@ namespace ApiEjemplo.Controllers
             DateTime fechaFin =
                 fechaInicio.AddMonths(dto.plazo_meses - 1);
 
-            decimal moraDiaria = dto.moratorio_por_dia.HasValue && dto.moratorio_por_dia.Value > 0
-                ? dto.moratorio_por_dia.Value
-                : Math.Round((pagoMes * 0.10m) / 30m, 2);
+            decimal moraDiaria = Math.Round(pagoMes * (dto.tasa_interes * 12m * 2m / 100m) / 360m, 2);
 
             var prestamo = new Prestamo
             {
@@ -558,7 +556,7 @@ namespace ApiEjemplo.Controllers
                 prestamo.fecha_inicio;
 
             prestamo.mora_diaria =
-                Math.Round((prestamo.pago_mes * 0.10m) / 30m, 2);
+                Math.Round(prestamo.pago_mes * (prestamo.tasa_interes * 12m * 2m / 100m) / 360m, 2);
 
             await _context.SaveChangesAsync();
 
