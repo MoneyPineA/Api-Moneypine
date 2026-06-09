@@ -319,9 +319,20 @@ namespace ApiEjemplo.Controllers
                 .OrderByDescending(p => p.prestamo_id)
                 .ToList();
 
+            var porEstatus = cambios
+                .GroupBy(p => p.estatus.ToString())
+                .Select(g => new {
+                    estatus   = g.Key,
+                    cantidad  = g.Count(),
+                    ejemplo   = g.First().prestamo_id,
+                })
+                .OrderByDescending(g => g.cantidad)
+                .ToList();
+
             return Ok(new {
-                total_a_cambiar = cambios.Count,
-                preview         = cambios.Take(50),
+                total_a_cambiar    = cambios.Count,
+                resumen_por_estatus = porEstatus,
+                preview            = cambios.Take(50),
             });
         }
 
