@@ -70,8 +70,12 @@ namespace ApiEjemplo.Controllers
                 numero_recibo        = p.pago_id,
                 credito              = p.prestamo_id,
                 num_socio            = p.Prestamo?.Cliente?.clave_cliente,
-                socio                = p.Prestamo?.Cliente?.Usuario != null
-                    ? $"{p.Prestamo.Cliente.Usuario.nombre} {p.Prestamo.Cliente.Usuario.apellido} {p.Prestamo.Cliente.apellido_materno}".Trim()
+                socio                = p.Prestamo?.Cliente != null
+                    ? NombreHelper.BuildNombreCliente(
+                        p.Prestamo.Cliente.Usuario?.nombre,
+                        p.Prestamo.Cliente.Usuario?.apellido,
+                        p.Prestamo.Cliente.apellido_materno,
+                        p.Prestamo.cliente_id)
                     : $"Cliente #{p.Prestamo?.cliente_id}",
                 ruta                 = p.Prestamo?.destino ?? "—",
                 fecha_referencia     = p.fecha_pago.ToString("yyyy-MM-dd"),

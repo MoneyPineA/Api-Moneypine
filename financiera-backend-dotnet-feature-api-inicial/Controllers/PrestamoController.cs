@@ -207,20 +207,27 @@ namespace ApiEjemplo.Controllers
                 return NotFound("Préstamo no encontrado");
 
             // Otros miembros del mismo grupo (solo si es préstamo grupal)
-            var miembros_grupo = p.grupo_id.HasValue
+            // MONEYPINE-FIX: materializar primero para usar NombreHelper client-side (EF no soporta métodos custom en expression trees)
+            var miembros_raw = p.grupo_id.HasValue
                 ? await _context.Prestamos
                     .Where(x => x.grupo_id == p.grupo_id && x.prestamo_id != p.prestamo_id)
                     .Include(x => x.Cliente).ThenInclude(c => c.Usuario)
                     .Select(x => new {
                         x.prestamo_id,
-                        nombre = x.Cliente != null && x.Cliente.Usuario != null
-                            ? ((x.Cliente.Usuario.nombre ?? "") + " " +
-                               (x.Cliente.Usuario.apellido ?? "") + " " +
-                               (x.Cliente.apellido_materno ?? "")).Trim()
-                            : "Cliente #" + x.cliente_id,
+                        x.cliente_id,
+                        usuNombre   = x.Cliente != null && x.Cliente.Usuario != null ? x.Cliente.Usuario.nombre   : null,
+                        usuApellido = x.Cliente != null && x.Cliente.Usuario != null ? x.Cliente.Usuario.apellido : null,
+                        apMat       = x.Cliente != null ? x.Cliente.apellido_materno : null,
                     })
-                    .ToListAsync<object>()
+                    .ToListAsync()
                 : null;
+
+            var miembros_grupo = miembros_raw?
+                .Select(x => (object)new {
+                    x.prestamo_id,
+                    nombre = NombreHelper.BuildNombreCliente(x.usuNombre, x.usuApellido, x.apMat, x.cliente_id),
+                })
+                .ToList<object>();
 
             // MONEYPINE-FIX: calcular mora acumulada actual segun dias de atraso
             decimal moraAcumuladaActual = 0;
@@ -272,10 +279,12 @@ namespace ApiEjemplo.Controllers
                 p.grupo_id,
                 grupo_nombre    = p.Grupo != null ? p.Grupo.nombre : null,
                 miembros_grupo,
-                nombre_cliente  = p.Cliente != null && p.Cliente.Usuario != null
-                    ? ((p.Cliente.Usuario.nombre ?? "") + " " +
-                       (p.Cliente.Usuario.apellido ?? "") + " " +
-                       (p.Cliente.apellido_materno ?? "")).Trim()
+                nombre_cliente  = p.Cliente != null
+                    ? NombreHelper.BuildNombreCliente(
+                        p.Cliente.Usuario?.nombre,
+                        p.Cliente.Usuario?.apellido,
+                        p.Cliente.apellido_materno,
+                        p.cliente_id)
                     : "Cliente #" + p.cliente_id,
                 ruta_vinculacion = p.Cliente != null ? p.Cliente.ruta_vinculacion : null, // MONEYPINE-FIX: exponer ruta del cliente en detalle de crédito
                 curp             = p.Cliente != null ? p.Cliente.curp                : null,
@@ -821,8 +830,12 @@ namespace ApiEjemplo.Controllers
                 var asesor    = p.cobrador_id.HasValue && cobradores.ContainsKey(p.cobrador_id.Value)
                                     ? cobradores[p.cobrador_id.Value]
                                     : "—";
-                var cliente   = p.Cliente != null && p.Cliente.Usuario != null
-                                    ? $"{p.Cliente.Usuario.nombre} {p.Cliente.Usuario.apellido} {p.Cliente.apellido_materno}".Trim()
+                var cliente   = p.Cliente != null
+                                    ? NombreHelper.BuildNombreCliente(
+                                        p.Cliente.Usuario?.nombre,
+                                        p.Cliente.Usuario?.apellido,
+                                        p.Cliente.apellido_materno,
+                                        p.cliente_id)
                                     : $"Cliente #{p.cliente_id}";
                 var estadoCom = p.estatus == EstatusPrestamo.LIQUIDADO ? "PAGADO" : "PENDIENTE";
                 return new
