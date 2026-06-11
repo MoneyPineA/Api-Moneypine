@@ -279,12 +279,10 @@ namespace ApiEjemplo.Controllers
                 p.grupo_id,
                 grupo_nombre    = p.Grupo != null ? p.Grupo.nombre : null,
                 miembros_grupo,
-                nombre_cliente  = p.Cliente != null
-                    ? NombreHelper.BuildNombreCliente(
-                        p.Cliente.Usuario?.nombre,
-                        p.Cliente.Usuario?.apellido,
-                        p.Cliente.apellido_materno,
-                        p.cliente_id)
+                nombre_cliente  = p.Cliente != null && p.Cliente.Usuario != null
+                    ? ((p.Cliente.Usuario.nombre ?? "") + " " +
+                       (p.Cliente.apellido_paterno ?? "") + " " +
+                       (p.Cliente.apellido_materno ?? "")).Trim()
                     : "Cliente #" + p.cliente_id,
                 ruta_vinculacion = p.Cliente != null ? p.Cliente.ruta_vinculacion : null, // MONEYPINE-FIX: exponer ruta del cliente en detalle de crédito
                 curp             = p.Cliente != null ? p.Cliente.curp                : null,
@@ -555,17 +553,53 @@ namespace ApiEjemplo.Controllers
             // SALDO INICIAL (capital puro, sin interés)
             prestamo.saldo_actual = prestamo.monto;
 
-            prestamo.fecha_inicio =
-                prestamo.fecha_creacion.AddMonths(1);
+            // MONEYPINE-FIX: calcular desplazamiento de fechas según forma_pago (igual que GenerarPeriodos)
+            int freqDaysUpd = prestamo.forma_pago switch {
+                FormasPago.DIARIA      => 1,
+                FormasPago.SEMANAL     => 7,
+                FormasPago.CATORCENAL  => 14,
+                FormasPago.QUINCENAL   => 15,
+                _                      => 0, // MENSUAL
+            };
+            bool esMonthlyUpd = freqDaysUpd == 0;
 
-            prestamo.fecha_fin =
-                prestamo.fecha_inicio.AddMonths(prestamo.plazo_meses - 1);
+            // MONEYPINE-FIX: fecha_inicio puede venir explícita del DTO (campo "Fecha primer pago")
+            if (dto.fecha_inicio.HasValue)
+                prestamo.fecha_inicio = dto.fecha_inicio.Value;
+            else
+                prestamo.fecha_inicio = esMonthlyUpd
+                    ? prestamo.fecha_creacion.AddMonths(1)
+                    : prestamo.fecha_creacion.AddDays(freqDaysUpd);
 
-            prestamo.fecha_proximo_pago =
-                prestamo.fecha_inicio;
+            prestamo.fecha_fin = esMonthlyUpd
+                ? prestamo.fecha_inicio.AddMonths(prestamo.plazo_meses - 1)
+                : prestamo.fecha_inicio.AddDays((double)(prestamo.plazo_meses - 1) * freqDaysUpd);
+
+            prestamo.fecha_proximo_pago = prestamo.fecha_inicio;
 
             prestamo.mora_diaria =
                 Math.Round(prestamo.pago_mes * (prestamo.tasa_interes * 12m * 2m / 100m) / 360m, 2);
+
+            // MONEYPINE-FIX: actualizar fechas de periodos usando fecha_inicio como ancla
+            // Periodo i: vence en fecha_inicio + (i-1)*freq; inicia en fecha_inicio + (i-2)*freq
+            var periodosExistentes = await _context.PeriodosAmortizacion
+                .Where(p => p.prestamo_id == id)
+                .OrderBy(p => p.periodo)
+                .ToListAsync();
+
+            if (periodosExistentes.Any())
+            {
+                foreach (var p in periodosExistentes)
+                {
+                    p.fecha_vencimiento = esMonthlyUpd
+                        ? prestamo.fecha_inicio.AddMonths(p.periodo - 1)
+                        : prestamo.fecha_inicio.AddDays((double)(p.periodo - 1) * freqDaysUpd);
+                    p.fecha_inicio = esMonthlyUpd
+                        ? prestamo.fecha_inicio.AddMonths(p.periodo - 2)
+                        : prestamo.fecha_inicio.AddDays((double)(p.periodo - 2) * freqDaysUpd);
+                    _context.PeriodosAmortizacion.Update(p);
+                }
+            }
 
             await _context.SaveChangesAsync();
 
@@ -741,11 +775,20 @@ namespace ApiEjemplo.Controllers
                 }
                 else if (esCongelado)
                 {
-                    // MONEYPINE-FIX: mora congelada — estadoPago CONGELADO para distinguir
-                    //   de RETRASO en el contador de moratorios vigentes (BUG 1)
-                    estadoPago       = "CONGELADO";
-                    interesMoratorio = p.interes_moratorio;
-                    diasMoratorio    = p.dias_moratorio;
+                    // MONEYPINE-FIX: mora congelada — mostrar mora neta restando lo ya pagado via solo_mora
+                    decimal moraCongeladaNeta = Math.Max(0m, p.interes_moratorio - p.ahorro_por_pago);
+                    if (moraCongeladaNeta <= 0)
+                    {
+                        estadoPago       = "PAGADO"; // Mora totalmente saldada via solo_mora
+                        interesMoratorio = 0;
+                        diasMoratorio    = p.dias_moratorio;
+                    }
+                    else
+                    {
+                        estadoPago       = "CONGELADO";
+                        interesMoratorio = moraCongeladaNeta;
+                        diasMoratorio    = p.dias_moratorio;
+                    }
                 }
                 else if (fechaVenc <= hoy) // MONEYPINE-FIX: <= incluye periodos que vencen hoy
                 {
@@ -753,9 +796,10 @@ namespace ApiEjemplo.Controllers
                     //   formula: capitalPendiente × (tasaAnualMoratorio/100/365) × diasMora
                     estadoPago    = "RETRASO";
                     diasMoratorio = (int)(hoy - fechaVenc).TotalDays;
-                    interesMoratorio = diasMoratorio > 0 && prestamo.mora_diaria > 0 // MONEYPINE-FIX: usa mora_diaria directa (tasa_moratorio_anual = 0 en migración)
+                    decimal moraCalculada = diasMoratorio > 0 && prestamo.mora_diaria > 0 // MONEYPINE-FIX: usa mora_diaria directa (tasa_moratorio_anual = 0 en migración)
                         ? Math.Round(prestamo.mora_diaria * diasMoratorio, 2)
                         : 0;
+                    interesMoratorio = Math.Max(0m, moraCalculada - p.ahorro_por_pago); // Restar mora ya pagada vía solo_mora
                 }
                 else
                 {
@@ -783,6 +827,7 @@ namespace ApiEjemplo.Controllers
                     saldoFinal       = p.saldo_final,
                     pagoProgramado,
                     pagoTotal        = pagoProgramado + interesMoratorio,
+                    pagoTotalVisual  = pagoProgramado,                              // Sin mora — para visualización en tabla
                     pagoPactado      = p.pago_pactado,                         // MONEYPINE-FIX: pago real acordado (pagos parciales)
                     estadoPago,
                 };
@@ -830,12 +875,17 @@ namespace ApiEjemplo.Controllers
                 var asesor    = p.cobrador_id.HasValue && cobradores.ContainsKey(p.cobrador_id.Value)
                                     ? cobradores[p.cobrador_id.Value]
                                     : "—";
+<<<<<<< HEAD
                 var cliente   = p.Cliente != null
                                     ? NombreHelper.BuildNombreCliente(
                                         p.Cliente.Usuario?.nombre,
                                         p.Cliente.Usuario?.apellido,
                                         p.Cliente.apellido_materno,
                                         p.cliente_id)
+=======
+                var cliente   = p.Cliente != null && p.Cliente.Usuario != null
+                                    ? $"{p.Cliente.Usuario.nombre} {p.Cliente.apellido_paterno} {p.Cliente.apellido_materno}".Trim()
+>>>>>>> 23ffbe2 (Prueba)
                                     : $"Cliente #{p.cliente_id}";
                 var estadoCom = p.estatus == EstatusPrestamo.LIQUIDADO ? "PAGADO" : "PENDIENTE";
                 return new

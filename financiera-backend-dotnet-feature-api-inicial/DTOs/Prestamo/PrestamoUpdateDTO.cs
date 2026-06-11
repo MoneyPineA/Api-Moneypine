@@ -10,6 +10,8 @@ namespace ApiEjemplo.DTOs.Prestamo
         public EstatusPrestamo estatus { get; set; }
         public FormasPago forma_pago { get; set; } = FormasPago.MENSUAL;
         public DateTime? fecha_creacion { get; set; }
+        // MONEYPINE-FIX: fecha primer pago — editable independiente de fecha_creacion
+        public DateTime? fecha_inicio { get; set; }
 
         // ── Ruta vinculada (actualiza el Cliente) ──
         public string? ruta_vinculacion { get; set; }

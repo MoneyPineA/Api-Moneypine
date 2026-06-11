@@ -70,12 +70,8 @@ namespace ApiEjemplo.Controllers
                 numero_recibo        = p.pago_id,
                 credito              = p.prestamo_id,
                 num_socio            = p.Prestamo?.Cliente?.clave_cliente,
-                socio                = p.Prestamo?.Cliente != null
-                    ? NombreHelper.BuildNombreCliente(
-                        p.Prestamo.Cliente.Usuario?.nombre,
-                        p.Prestamo.Cliente.Usuario?.apellido,
-                        p.Prestamo.Cliente.apellido_materno,
-                        p.Prestamo.cliente_id)
+                socio                = p.Prestamo?.Cliente?.Usuario != null
+                    ? $"{p.Prestamo.Cliente.Usuario.nombre} {p.Prestamo.Cliente.apellido_paterno} {p.Prestamo.Cliente.apellido_materno}".Trim()
                     : $"Cliente #{p.Prestamo?.cliente_id}",
                 ruta                 = p.Prestamo?.destino ?? "—",
                 fecha_referencia     = p.fecha_pago.ToString("yyyy-MM-dd"),
@@ -262,7 +258,38 @@ namespace ApiEjemplo.Controllers
                     ? Math.Round(interesTotal * (prestamo.saldo_actual / prestamo.monto), 2)
                     : 0;
             }
-            decimal maxPermitido = prestamo.saldo_actual + moraAcumulada + interesesPendientes;
+
+            // Cargar periodos CONGELADOS (necesarios para solo_mora)
+            var periodosCongelados = dto.tipo_pago == "solo_mora"
+                ? await _context.PeriodosAmortizacion
+                    .Where(pa => pa.prestamo_id == dto.prestamo_id && pa.estado_pago == 5)
+                    .OrderBy(pa => pa.periodo)
+                    .ToListAsync()
+                : new List<PeriodoAmortizacion>();
+
+            // Calcular maxPermitido según tipo de pago
+            decimal maxPermitido;
+            if (dto.tipo_pago == "solo_mora")
+            {
+                decimal moraCongelada = periodosCongelados.Sum(p => Math.Max(0m, p.interes_moratorio - p.ahorro_por_pago));
+                decimal moraRetraso   = periodosPendientes.Sum(p => {
+                    int d = Math.Max(0, (int)(fechaPago.Date - p.fecha_vencimiento.Date).TotalDays);
+                    decimal m = d > 0 ? Math.Round(prestamo.mora_diaria * d, 2) : 0m;
+                    return Math.Max(0m, m - p.ahorro_por_pago);
+                });
+                maxPermitido = moraCongelada + moraRetraso;
+            }
+            else if (dto.tipo_pago == "parcialidad")
+            {
+                maxPermitido = periodosPendientes.Any()
+                    ? periodosPendientes.Sum(p => p.abono_capital + p.interes_normal + p.interes_iva)
+                    : prestamo.saldo_actual + interesesPendientes;
+            }
+            else
+            {
+                maxPermitido = prestamo.saldo_actual + moraAcumulada + interesesPendientes;
+            }
+
             if (dto.monto_pagado > maxPermitido * 1.02m) // MONEYPINE-FIX: margen 2% para redondeo de mora en pago total
                 return BadRequest($"El monto ({dto.monto_pagado:N2}) excede el adeudo total ({maxPermitido:N2}). Saldo: ${prestamo.saldo_actual:N2}, Intereses: ${interesesPendientes:N2}, Mora: ${moraAcumulada:N2}");
 
@@ -281,8 +308,7 @@ namespace ApiEjemplo.Controllers
             decimal pagoRestante = dto.monto_pagado + pagoAcumulado;
 
             // ================================
-            // 3. ITERAR PERIODOS: marcar como pagado si el monto alcanza
-            //    costo_total = abono_capital + interés + mora propia del periodo
+            // 3. ITERAR PERIODOS según tipo_pago
             // ================================
 
             var aMarcarPagados = new List<PeriodoAmortizacion>();
@@ -291,27 +317,85 @@ namespace ApiEjemplo.Controllers
             decimal ivaPagado     = 0m;
             decimal moraPagada    = 0m;
 
-            foreach (var p in periodosPendientes)
+            if (dto.tipo_pago == "solo_mora")
             {
-                int     diasMora     = Math.Max(0, (int)(fechaPago.Date - p.fecha_vencimiento.Date).TotalDays);
-                decimal moraPeriodo  = diasMora > 0 ? Math.Round(prestamo.mora_diaria * diasMora, 2) : 0m;
-                decimal costoPeriodo = p.abono_capital + p.interes_normal + p.interes_iva + moraPeriodo;
-
-                if (pagoRestante >= costoPeriodo - 0.05m) // MONEYPINE-FIX: tolerancia 5 centavos para redondeo de mora diaria
+                // Pagar mora congelada de periodos CONGELADOS usando ahorro_por_pago
+                // NO se cambia estado_pago para permitir reversar al eliminar el recibo
+                foreach (var p in periodosCongelados)
                 {
-                    aMarcarPagados.Add(p);
-                    pagoRestante  -= costoPeriodo;
-                    capitalPagado += p.abono_capital;
-                    interesPagado += p.interes_normal;
-                    ivaPagado     += p.interes_iva;
-                    moraPagada    += moraPeriodo;
-
-                    p.estado_pago       = 3;
-                    p.fecha_pagado      = fechaPago;
-                    p.dias_moratorio    = diasMora;
-                    p.interes_moratorio = moraPeriodo;
+                    decimal moraRestanteCongelada = Math.Max(0m, p.interes_moratorio - p.ahorro_por_pago);
+                    if (moraRestanteCongelada <= 0) continue;
+                    if (pagoRestante >= moraRestanteCongelada - 0.05m)
+                    {
+                        pagoRestante      -= moraRestanteCongelada;
+                        moraPagada        += moraRestanteCongelada;
+                        p.ahorro_por_pago += moraRestanteCongelada;
+                    }
+                    else
+                    {
+                        p.ahorro_por_pago += pagoRestante;
+                        moraPagada        += pagoRestante;
+                        pagoRestante       = 0;
+                        break;
+                    }
                 }
-                else break;
+
+                // Aplicar remanente a mora de periodos en RETRASO (sin cambiar estado_pago)
+                if (pagoRestante > 0)
+                {
+                    foreach (var p in periodosPendientes)
+                    {
+                        int     diasMora    = Math.Max(0, (int)(fechaPago.Date - p.fecha_vencimiento.Date).TotalDays);
+                        decimal moraPeriodo = diasMora > 0 ? Math.Round(prestamo.mora_diaria * diasMora, 2) : 0m;
+                        decimal moraRestante = Math.Max(0m, moraPeriodo - p.ahorro_por_pago);
+                        if (moraRestante <= 0) continue;
+
+                        if (pagoRestante >= moraRestante - 0.05m)
+                        {
+                            pagoRestante        -= moraRestante;
+                            moraPagada          += moraRestante;
+                            p.ahorro_por_pago   += moraRestante;
+                        }
+                        else
+                        {
+                            p.ahorro_por_pago += pagoRestante;
+                            moraPagada        += pagoRestante;
+                            pagoRestante       = 0;
+                            break;
+                        }
+                    }
+                }
+            }
+            else
+            {
+                foreach (var p in periodosPendientes)
+                {
+                    int     diasMora     = Math.Max(0, (int)(fechaPago.Date - p.fecha_vencimiento.Date).TotalDays);
+                    decimal moraPeriodo  = diasMora > 0 ? Math.Round(prestamo.mora_diaria * diasMora, 2) : 0m;
+                    decimal moraEfectiva = Math.Max(0m, moraPeriodo - p.ahorro_por_pago); // Resta mora ya pagada vía solo_mora
+
+                    decimal costoPeriodo = dto.tipo_pago == "parcialidad"
+                        ? p.abono_capital + p.interes_normal + p.interes_iva           // Sin mora
+                        : p.abono_capital + p.interes_normal + p.interes_iva + moraEfectiva; // Con mora
+
+                    if (pagoRestante >= costoPeriodo - 0.05m) // MONEYPINE-FIX: tolerancia 5 centavos para redondeo de mora diaria
+                    {
+                        aMarcarPagados.Add(p);
+                        pagoRestante  -= costoPeriodo;
+                        capitalPagado += p.abono_capital;
+                        interesPagado += p.interes_normal;
+                        ivaPagado     += p.interes_iva;
+                        moraPagada    += dto.tipo_pago == "parcialidad" ? 0m : moraEfectiva;
+
+                        // CONGELADO si pagó solo parcialidad y había mora pendiente; PAGADO en caso contrario
+                        bool teniaMora  = moraEfectiva > 0;
+                        p.estado_pago       = (dto.tipo_pago == "parcialidad" && teniaMora) ? 5 : 3;
+                        p.fecha_pagado      = fechaPago;
+                        p.dias_moratorio    = diasMora;
+                        p.interes_moratorio = moraEfectiva;
+                    }
+                    else break;
+                }
             }
 
             // ================================
@@ -485,12 +569,54 @@ namespace ApiEjemplo.Controllers
             // MONEYPINE-FIX: saldo_actual derivado de periodos pendientes, no aritmética manual
             // Los periodos revertidos aún no están en DB (SaveChanges no ejecutado), los sumamos por separado
 
+            // Revertir solo_mora: reducir ahorro_por_pago en periodos CONGELADOS y RETRASO
+            if (pago.abono_capital == 0 && pago.mora_pagada > 0)
+            {
+                decimal moraADescontar = pago.mora_pagada;
+
+                var congeladosCon = await _context.PeriodosAmortizacion
+                    .Where(pa => pa.prestamo_id == pago.prestamo_id && pa.estado_pago == 5 && pa.ahorro_por_pago > 0)
+                    .OrderBy(pa => pa.periodo)
+                    .ToListAsync();
+                foreach (var p in congeladosCon)
+                {
+                    if (moraADescontar <= 0) break;
+                    decimal reduccion = Math.Min(p.ahorro_por_pago, moraADescontar);
+                    p.ahorro_por_pago -= reduccion;
+                    moraADescontar    -= reduccion;
+                    _context.PeriodosAmortizacion.Update(p);
+                }
+
+                if (moraADescontar > 0)
+                {
+                    var retrasoCon = await _context.PeriodosAmortizacion
+                        .Where(pa => pa.prestamo_id == pago.prestamo_id && pa.estado_pago == 1 && pa.ahorro_por_pago > 0)
+                        .OrderBy(pa => pa.periodo)
+                        .ToListAsync();
+                    foreach (var p in retrasoCon)
+                    {
+                        if (moraADescontar <= 0) break;
+                        decimal reduccion = Math.Min(p.ahorro_por_pago, moraADescontar);
+                        p.ahorro_por_pago -= reduccion;
+                        moraADescontar    -= reduccion;
+                        _context.PeriodosAmortizacion.Update(p);
+                    }
+                }
+
+                _context.Pagos.Remove(pago);
+                _context.Prestamos.Update(prestamo);
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+                Console.WriteLine($"[DELETE-PAGO] solo_mora revertido: {pago.mora_pagada:N2} descontado de ahorro_por_pago");
+                return NoContent();
+            }
+
             // MONEYPINE-FIX: buscar TODOS los periodos marcados por este pago
-            // Criterios: mismo prestamo_id + estado_pago IN (2,3) + fecha_pagado coincide con fecha_pago del recibo
-            // estado_pago=2 cubre datos importados del sistema viejo; estado_pago=3 cubre pagos registrados por la API
+            // Criterios: mismo prestamo_id + estado_pago IN (2,3,5) + fecha_pagado coincide con fecha_pago del recibo
+            // estado_pago=2 cubre datos importados del sistema viejo; estado_pago=3 cubre pagos normales; estado_pago=5 cubre CONGELADO
             var periodosARevertir = await _context.PeriodosAmortizacion
                 .Where(pa => pa.prestamo_id == pago.prestamo_id
-                          && (pa.estado_pago == 2 || pa.estado_pago == 3)
+                          && (pa.estado_pago == 2 || pa.estado_pago == 3 || pa.estado_pago == 5)
                           && pa.fecha_pagado.HasValue
                           && pa.fecha_pagado.Value.Date == pago.fecha_pago.Date)
                 .OrderBy(pa => pa.periodo)
