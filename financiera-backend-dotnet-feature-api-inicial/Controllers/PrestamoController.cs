@@ -875,17 +875,8 @@ namespace ApiEjemplo.Controllers
                 var asesor    = p.cobrador_id.HasValue && cobradores.ContainsKey(p.cobrador_id.Value)
                                     ? cobradores[p.cobrador_id.Value]
                                     : "—";
-<<<<<<< HEAD
-                var cliente   = p.Cliente != null
-                                    ? NombreHelper.BuildNombreCliente(
-                                        p.Cliente.Usuario?.nombre,
-                                        p.Cliente.Usuario?.apellido,
-                                        p.Cliente.apellido_materno,
-                                        p.cliente_id)
-=======
                 var cliente   = p.Cliente != null && p.Cliente.Usuario != null
                                     ? $"{p.Cliente.Usuario.nombre} {p.Cliente.apellido_paterno} {p.Cliente.apellido_materno}".Trim()
->>>>>>> 23ffbe2 (Prueba)
                                     : $"Cliente #{p.cliente_id}";
                 var estadoCom = p.estatus == EstatusPrestamo.LIQUIDADO ? "PAGADO" : "PENDIENTE";
                 return new
