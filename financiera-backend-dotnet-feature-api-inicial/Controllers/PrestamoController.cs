@@ -14,6 +14,8 @@ namespace ApiEjemplo.Controllers
     public class AprobarBodyDto
     {
         public string? administrado_en { get; set; }
+        // MONEYPINE-FIX: fecha primer pago capturada en modal de apertura (opcional)
+        public DateTime? fecha_apertura { get; set; }
     }
 
     [ApiController]
@@ -95,6 +97,105 @@ namespace ApiEjemplo.Controllers
                 return NotFound("Préstamo no encontrado");
             if (prestamo.estatus != EstatusPrestamo.PENDIENTE)
                 return BadRequest("Solo se pueden aprobar préstamos en estado PENDIENTE");
+
+            // MONEYPINE-FIX: seguridad — crédito PENDIENTE no debe tener pagos (invariante de negocio)
+            var tienePagos = await _context.Pagos.AnyAsync(p => p.prestamo_id == id);
+            if (tienePagos)
+                return BadRequest("No se puede aprobar un crédito con pagos aplicados");
+
+            // ================================================================
+            // MONEYPINE-FIX: determinar fechaBase para amortización
+            // Prioridad:
+            //   1. body.fecha_apertura (admin la capturó en modal de apertura)
+            //   2. prestamo.fecha_inicio si fue editada manualmente antes de aprobar
+            //   3. Fecha actual México (día de aprobación — caso default)
+            // ================================================================
+            int freqDaysApro = prestamo.forma_pago switch {
+                FormasPago.DIARIA      => 1,
+                FormasPago.SEMANAL     => 7,
+                FormasPago.CATORCENAL  => 14,
+                FormasPago.QUINCENAL   => 15,
+                _                      => 0, // MENSUAL
+            };
+            bool esMonthlyApro = freqDaysApro == 0;
+
+            // Valor que hubiera calculado el POST automáticamente (sin edición manual)
+            DateTime autoCalcFechaInicio = esMonthlyApro
+                ? prestamo.fecha_creacion.AddMonths(1)
+                : prestamo.fecha_creacion.AddDays(freqDaysApro);
+
+            // Si la diferencia con el auto-calc supera 1 día → fue editada a mano via PUT/CreditoDetalle
+            bool fechaManualmenteFijada =
+                Math.Abs((prestamo.fecha_inicio - autoCalcFechaInicio).TotalDays) > 1.0;
+
+            DateTime fechaBase;
+            if (body?.fecha_apertura.HasValue == true)
+                fechaBase = TimeHelper.ConvertToMexicoTime(body.fecha_apertura.Value);
+            else if (fechaManualmenteFijada)
+                fechaBase = prestamo.fecha_inicio; // Respeta lo que editó el admin en CreditoDetalle
+            else
+                fechaBase = TimeHelper.GetMexicoTime(); // Default: día de aprobación en hora México
+
+            // ================================================================
+            // MONEYPINE-FIX: actualizar fechas del préstamo con fechaBase
+            // ================================================================
+            prestamo.fecha_inicio       = fechaBase;
+            prestamo.fecha_proximo_pago = fechaBase;
+            prestamo.fecha_fin          = esMonthlyApro
+                ? fechaBase.AddMonths(prestamo.plazo_meses - 1)
+                : fechaBase.AddDays((double)(prestamo.plazo_meses - 1) * freqDaysApro);
+
+            // ================================================================
+            // MONEYPINE-FIX: regenerar periodos de amortización
+            // Periodo 1: vence en fechaBase (mismo día de apertura)
+            // Periodo i: vence en fechaBase + (i-1) × freq
+            // ================================================================
+            var periodosExistentes = await _context.PeriodosAmortizacion
+                .Where(p => p.prestamo_id == id)
+                .ToListAsync();
+            _context.PeriodosAmortizacion.RemoveRange(periodosExistentes);
+
+            decimal freqDivApro = prestamo.forma_pago switch {
+                FormasPago.SEMANAL    => 4m,
+                FormasPago.QUINCENAL  => 2m,
+                FormasPago.CATORCENAL => 2m,
+                _                     => 1m,
+            };
+            decimal interesPerPeriodoApro = prestamo.monto * prestamo.tasa_interes / (freqDivApro * 100m);
+            decimal ivaPerPeriodoApro     = interesPerPeriodoApro * 0.16m;
+            decimal abonoCapitalApro      = Math.Round(prestamo.monto / prestamo.plazo_meses, 2);
+
+            var periodosList = new List<PeriodoAmortizacion>();
+            for (int i = 1; i <= prestamo.plazo_meses; i++)
+            {
+                DateTime fechaVencP = esMonthlyApro
+                    ? fechaBase.AddMonths(i - 1)
+                    : fechaBase.AddDays((double)(i - 1) * freqDaysApro);
+                DateTime fechaInicioP = esMonthlyApro
+                    ? fechaBase.AddMonths(i - 2)
+                    : fechaBase.AddDays((double)(i - 2) * freqDaysApro);
+
+                decimal capitalPendiente = prestamo.monto - abonoCapitalApro * (i - 1);
+                decimal saldoFinal       = i == prestamo.plazo_meses
+                    ? 0m
+                    : Math.Max(0m, prestamo.monto - abonoCapitalApro * i);
+
+                periodosList.Add(new PeriodoAmortizacion
+                {
+                    prestamo_id       = prestamo.prestamo_id,
+                    periodo           = i,
+                    fecha_inicio      = fechaInicioP,
+                    fecha_vencimiento = fechaVencP,
+                    capital_pendiente = capitalPendiente,
+                    abono_capital     = abonoCapitalApro,
+                    interes_normal    = interesPerPeriodoApro,
+                    interes_iva       = ivaPerPeriodoApro,
+                    pago_pactado      = prestamo.pago_mes,
+                    saldo_final       = saldoFinal,
+                    estado_pago       = 1,
+                });
+            }
+            _context.PeriodosAmortizacion.AddRange(periodosList);
 
             prestamo.estatus = EstatusPrestamo.ACTIVO;
             // MONEYPINE-FIX: guardar sistema fiscal al aprobar el crédito
@@ -279,10 +380,13 @@ namespace ApiEjemplo.Controllers
                 p.grupo_id,
                 grupo_nombre    = p.Grupo != null ? p.Grupo.nombre : null,
                 miembros_grupo,
-                nombre_cliente  = p.Cliente != null && p.Cliente.Usuario != null
-                    ? ((p.Cliente.Usuario.nombre ?? "") + " " +
-                       (p.Cliente.apellido_paterno ?? "") + " " +
-                       (p.Cliente.apellido_materno ?? "")).Trim()
+                // MONEYPINE-FIX: usar NombreHelper para evitar duplicar apellido materno en clientes legacy
+                nombre_cliente  = p.Cliente != null
+                    ? NombreHelper.BuildNombreCliente(
+                        p.Cliente.Usuario?.nombre,
+                        p.Cliente.Usuario?.apellido,
+                        p.Cliente.apellido_materno,
+                        p.cliente_id)
                     : "Cliente #" + p.cliente_id,
                 ruta_vinculacion = p.Cliente != null ? p.Cliente.ruta_vinculacion : null, // MONEYPINE-FIX: exponer ruta del cliente en detalle de crédito
                 curp             = p.Cliente != null ? p.Cliente.curp                : null,
@@ -875,8 +979,13 @@ namespace ApiEjemplo.Controllers
                 var asesor    = p.cobrador_id.HasValue && cobradores.ContainsKey(p.cobrador_id.Value)
                                     ? cobradores[p.cobrador_id.Value]
                                     : "—";
-                var cliente   = p.Cliente != null && p.Cliente.Usuario != null
-                                    ? $"{p.Cliente.Usuario.nombre} {p.Cliente.apellido_paterno} {p.Cliente.apellido_materno}".Trim()
+                // MONEYPINE-FIX: usar NombreHelper para evitar duplicar apellido materno en clientes legacy
+                var cliente   = p.Cliente != null
+                                    ? NombreHelper.BuildNombreCliente(
+                                        p.Cliente.Usuario?.nombre,
+                                        p.Cliente.Usuario?.apellido,
+                                        p.Cliente.apellido_materno,
+                                        p.cliente_id)
                                     : $"Cliente #{p.cliente_id}";
                 var estadoCom = p.estatus == EstatusPrestamo.LIQUIDADO ? "PAGADO" : "PENDIENTE";
                 return new
