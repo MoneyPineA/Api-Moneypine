@@ -9,4 +9,6 @@ public class UsuarioUpdateDto
     public string? telefono { get; set; }
     public RolUsuario rol { get; set; }
     public EstadoUsuario estado { get; set; }
+    // Si viene null o vacío, no se toca password_hash
+    public string? nuevaPassword { get; set; }
 }
