@@ -91,13 +91,12 @@ namespace ApiEjemplo.Controllers
                 query = query.Where(p => p.forma_pago == fp);
             }
 
-            // ATRASADO: siempre incluir (deuda activa, se cobra todos los días)
-            // ACTIVO: solo si fecha_proximo_pago cae en el rango solicitado
+            // Todos los estatus (ACTIVO/ATRASADO): solo si fecha_proximo_pago cae en el rango.
+            // La cartera vencida acumulada sin fecha en el rango pertenece a otro reporte.
             query = query.Where(p =>
-                p.estatus == EstatusPrestamo.ATRASADO ||
-                (p.fecha_proximo_pago.HasValue &&
-                 p.fecha_proximo_pago.Value.Date >= desde.Date &&
-                 p.fecha_proximo_pago.Value.Date <= hasta.Date));
+                p.fecha_proximo_pago.HasValue &&
+                p.fecha_proximo_pago.Value.Date >= desde.Date &&
+                p.fecha_proximo_pago.Value.Date <= hasta.Date);
 
             var prestamos = await query.ToListAsync();
 
