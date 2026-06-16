@@ -58,8 +58,9 @@ namespace ApiEjemplo.Controllers
             else
             {
                 query = query.Where(p =>
-                    p.estatus == EstatusPrestamo.ACTIVO ||
-                    p.estatus == EstatusPrestamo.ATRASADO);
+                    (p.estatus == EstatusPrestamo.ACTIVO ||
+                     p.estatus == EstatusPrestamo.ATRASADO) &&
+                    p.estatus != EstatusPrestamo.LIQUIDADO);
             }
 
             // Cobrador
