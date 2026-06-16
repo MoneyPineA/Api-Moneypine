@@ -166,7 +166,7 @@ namespace ApiEjemplo.Controllers
                     latitud          = p.Cliente.latitud,
                     longitud         = p.Cliente.longitud
                 };
-            }).ToList();
+            }).OrderByDescending(p => p.fechaProximoPago).ToList();
 
             // ── Gráfico: cuotas agrupadas por fecha ─────────────
             var graficoAbonos = prestamos
