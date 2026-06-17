@@ -394,7 +394,21 @@ namespace ApiEjemplo.Controllers
                         p.dias_moratorio    = diasMora;
                         p.interes_moratorio = moraEfectiva;
                     }
-                    else break;
+                    else if (dto.tipo_pago != "parcialidad" && moraEfectiva > 0 && pagoRestante <= moraEfectiva + 0.05m)
+                    {
+                        // Caso 1: monto alcanza solo para mora — acumular en ahorro_por_pago sin cerrar período
+                        decimal moraAplicar   = pagoRestante;
+                        moraPagada           += moraAplicar;
+                        p.ahorro_por_pago    += moraAplicar;
+                        pagoRestante          = 0m;
+                        break;
+                    }
+                    else
+                    {
+                        // Caso 2: monto cubre mora pero no el período completo — rechazar para evitar doble conteo
+                        return BadRequest($"El monto ({dto.monto_pagado:N2}) no alcanza para cerrar el período completo " +
+                            $"(${costoPeriodo:N2}). Para pagar solo mora use tipo_pago=solo_mora.");
+                    }
                 }
             }
 
