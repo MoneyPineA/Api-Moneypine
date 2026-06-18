@@ -245,6 +245,12 @@ namespace ApiEjemplo.Data
                 .OnDelete(DeleteBehavior.Cascade);
 
             modelBuilder.Entity<PagoDetalle>()
+                .HasOne(pd => pd.Prestamo)
+                .WithMany()
+                .HasForeignKey(pd => pd.prestamo_id)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<PagoDetalle>()
                 .HasOne(pd => pd.Periodo)
                 .WithMany()
                 .HasForeignKey(pd => pd.periodo_id)

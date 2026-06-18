@@ -7,160 +7,231 @@ using ApiEjemplo.Models;
 namespace ApiEjemplo.Services
 {
     /// <summary>
-    /// Motor único para preview y aplicación de los 6 tipos de pago.
-    /// CalcularDistribucion es puro (no muta entidades, no escribe en DB).
-    /// El controller POST usa el resultado para aplicar los cambios.
+    /// Motor único de pagos. CalcularDistribucion es puro (no muta entidades, no escribe en DB).
+    /// RecalcularEstadoPeriodo, RecalcularSaldo y RecalcularEstatus sí leen la DB y mutan entidades
+    /// pasadas por referencia — usarlos solo desde el controller dentro de una transacción.
     /// </summary>
     public class AplicacionPagoService
     {
         private readonly AppDbContext _context;
+
         public AplicacionPagoService(AppDbContext context) { _context = context; }
 
-        // ── DTOs de resultado ─────────────────────────────────────────────
+        // ── Whitelist de tipos válidos ─────────────────────────────────────
+
+        private static readonly HashSet<string> TiposValidos = new(StringComparer.Ordinal)
+        {
+            "parcialidad_mora", "parcialidad", "solo_mora",
+            "solo_capital", "solo_interes", "pago_total"
+        };
+
+        public static bool TipoPagoValido(string? tipo) =>
+            tipo != null && TiposValidos.Contains(tipo);
+
+        // ── DTOs de resultado (usados por controller y preview) ───────────
 
         public class DetallePerPeriodo
         {
-            public int     periodo_id      { get; set; }
-            public int     periodo_num     { get; set; }
+            public int?    periodo_id       { get; set; }
+            public int     periodo_num      { get; set; }
             public decimal capital_aplicado { get; set; }
             public decimal interes_aplicado { get; set; }
             public decimal iva_aplicado     { get; set; }
             public decimal mora_aplicada    { get; set; }
             public bool    periodo_cerrado  { get; set; }
-            // Para periodos cerrados: nuevo estado_pago (2=legacy,3=normal,5=congelado)
             public int     nuevo_estado     { get; set; } = 3;
             public int     dias_moratorio   { get; set; }
             public decimal interes_moratorio { get; set; }
-            // Para periodos con ahorro parcial: cuánto sumar a ahorro_por_pago
-            public decimal delta_ahorro     { get; set; }
         }
 
         public class ResultadoDistribucion
         {
-            public bool    ok            { get; set; } = true;
-            public string? error         { get; set; }
-
-            public decimal capital_total  { get; set; }
-            public decimal interes_total  { get; set; }
-            public decimal iva_total      { get; set; }
-            public decimal mora_total     { get; set; }
-            public decimal saldo_nuevo    { get; set; }
-            public string  tipo_pago      { get; set; } = "";
-
+            public bool    ok           { get; set; } = true;
+            public string? error        { get; set; }
+            public decimal capital_total { get; set; }
+            public decimal interes_total { get; set; }
+            public decimal iva_total    { get; set; }
+            public decimal mora_total   { get; set; }
+            public decimal saldo_nuevo  { get; set; }
+            public string  tipo_pago    { get; set; } = "";
             public List<DetallePerPeriodo> detalles { get; set; } = new();
         }
 
-        // ── Motor principal (puro — no escribe en DB, no muta entidades) ──
+        // ── Struct interno: acumulado real desde pago_detalle por periodo ─
+
+        private record AcumPd(decimal Cap, decimal Int, decimal Iva);
+
+        // ─────────────────────────────────────────────────────────────────
+        // CargarAcumPorPeriodo
+        // Suma capital/interes/iva ya aplicados en pago_detalle de pagos
+        // APLICADOS para el préstamo. Usado para calcular pendientes reales.
+        // ─────────────────────────────────────────────────────────────────
+
+        private async Task<Dictionary<int, AcumPd>> CargarAcumPorPeriodo(int prestamoId)
+        {
+            var rows = await _context.PagoDetalles
+                .Where(pd => pd.prestamo_id == prestamoId && pd.periodo_id != null)
+                .Join(_context.Pagos.Where(p => p.estatus == EstatusPago.APLICADO),
+                      pd => pd.pago_id, p => p.pago_id, (pd, _) => pd)
+                .GroupBy(pd => pd.periodo_id!.Value)
+                .Select(g => new
+                {
+                    pid  = g.Key,
+                    cap  = g.Sum(x => x.capital_aplicado),
+                    int_ = g.Sum(x => x.interes_aplicado),
+                    iva  = g.Sum(x => x.iva_aplicado),
+                })
+                .ToListAsync();
+
+            return rows.ToDictionary(r => r.pid, r => new AcumPd(r.cap, r.int_, r.iva));
+        }
+
+        // ─────────────────────────────────────────────────────────────────
+        // CalcularDistribucion  (PURO — no escribe en DB, no muta entidades)
+        // ─────────────────────────────────────────────────────────────────
 
         public async Task<ResultadoDistribucion> CalcularDistribucion(PagoCreateDTO dto)
         {
             var res = new ResultadoDistribucion { tipo_pago = dto.tipo_pago };
 
-            var prestamo = await _context.Prestamos
-                .AsNoTracking()
+            if (!TipoPagoValido(dto.tipo_pago))
+                return Err(res, $"tipo_pago '{dto.tipo_pago}' no reconocido. " +
+                                $"Valores válidos: {string.Join(", ", TiposValidos)}");
+
+            if (dto.monto_pagado <= 0)
+                return Err(res, "El monto debe ser mayor a 0");
+
+            var prestamo = await _context.Prestamos.AsNoTracking()
                 .FirstOrDefaultAsync(p => p.prestamo_id == dto.prestamo_id);
 
-            if (prestamo == null)          return Err(res, "El préstamo no existe");
+            if (prestamo == null)
+                return Err(res, "El préstamo no existe");
             if (prestamo.estatus == EstatusPrestamo.LIQUIDADO)
-                                           return Err(res, "El préstamo ya está liquidado");
-            if (dto.monto_pagado <= 0)     return Err(res, "El monto debe ser mayor a 0");
+                return Err(res, "El préstamo ya está liquidado");
 
             DateTime fechaPago = dto.fecha_pago.HasValue
                 ? DateTime.SpecifyKind(dto.fecha_pago.Value.Date, DateTimeKind.Unspecified)
                 : TimeHelper.GetMexicoTime();
 
-            var pendientes = await _context.PeriodosAmortizacion
-                .AsNoTracking()
+            // Periodos pendientes y congelados
+            var pendientes = await _context.PeriodosAmortizacion.AsNoTracking()
                 .Where(pa => pa.prestamo_id == dto.prestamo_id && pa.estado_pago == 1)
                 .OrderBy(pa => pa.periodo)
                 .ToListAsync();
 
-            decimal interesesPend = pendientes.Any()
-                ? pendientes.Sum(p => p.interes_normal + p.interes_iva)
-                : (prestamo.monto > 0
-                    ? Math.Round((prestamo.monto_total - prestamo.monto) * (prestamo.saldo_actual / prestamo.monto), 2)
-                    : 0);
-
-            var primerPend = pendientes.FirstOrDefault();
-            DateTime fechaRefMora = primerPend?.fecha_vencimiento ?? prestamo.fecha_proximo_pago ?? fechaPago;
-            decimal moraRef = 0;
-            if (fechaPago.Date > fechaRefMora.Date.AddDays(prestamo.dias_gracia))
-                moraRef = (fechaPago.Date - fechaRefMora.Date).Days * prestamo.mora_diaria;
-
-            var congelados = (dto.tipo_pago == "solo_mora")
-                ? await _context.PeriodosAmortizacion
-                    .AsNoTracking()
+            var congelados = dto.tipo_pago == "solo_mora"
+                ? await _context.PeriodosAmortizacion.AsNoTracking()
                     .Where(pa => pa.prestamo_id == dto.prestamo_id && pa.estado_pago == 5)
                     .OrderBy(pa => pa.periodo)
                     .ToListAsync()
                 : new List<PeriodoAmortizacion>();
 
-            // Acumulado del mismo día para parcialidad_mora / parcialidad / pago_total
+            // Acumulados reales desde pago_detalle (antes de este pago)
+            var acum = await CargarAcumPorPeriodo(dto.prestamo_id);
+
+            // Máximo permitido (con pendientes reales)
+            decimal max = CalcMax(dto.tipo_pago, pendientes, congelados, prestamo, acum, fechaPago);
+
+            if (max > 0 && dto.monto_pagado > max * 1.02m)
+                return Err(res, $"El monto ({dto.monto_pagado:N2}) excede el adeudo ({max:N2}).");
+
+            // Acumulado del mismo día (pagos anteriores del día)
             var diaInicio = fechaPago.Date;
-            decimal pagoAcumulado = await _context.Pagos
+            decimal pagoAcumuladoDia = await _context.Pagos
                 .Where(p => p.prestamo_id == dto.prestamo_id
                          && p.fecha_pago >= diaInicio
                          && p.fecha_pago < diaInicio.AddDays(1)
                          && p.estatus == EstatusPago.APLICADO)
-                .SumAsync(p => (decimal?)(p.monto_pagado - p.interes_pagado - p.mora_pagada - p.abono_capital)) ?? 0m;
+                .SumAsync(p => (decimal?)p.monto_pagado) ?? 0m;
 
-            // maxPermitido
-            decimal max = dto.tipo_pago switch
-            {
-                "solo_mora" =>
-                    congelados.Sum(p => Math.Max(0m, p.interes_moratorio - p.ahorro_por_pago))
-                    + pendientes.Sum(p => {
-                        int d = Math.Max(0, (int)(fechaPago.Date - p.fecha_vencimiento.Date).TotalDays);
-                        decimal m = d > 0 ? Math.Round(prestamo.mora_diaria * d, 2) : 0m;
-                        return Math.Max(0m, m - p.ahorro_por_pago);
-                    }),
-                "solo_capital" =>
-                    prestamo.saldo_actual,
-                "solo_interes" =>
-                    interesesPend,
-                "parcialidad" =>
-                    pendientes.Any()
-                        ? pendientes.Sum(p => p.abono_capital + p.interes_normal + p.interes_iva)
-                        : prestamo.saldo_actual + interesesPend,
-                _ => // parcialidad_mora, pago_total
-                    prestamo.saldo_actual + moraRef + interesesPend,
-            };
-
-            if (max > 0 && dto.monto_pagado > max * 1.02m)
-                return Err(res, $"El monto ({dto.monto_pagado:N2}) excede el adeudo total ({max:N2}). " +
-                                $"Saldo: ${prestamo.saldo_actual:N2}, Intereses: ${interesesPend:N2}, Mora: ${moraRef:N2}");
-
-            decimal pagoRestante = dto.monto_pagado + pagoAcumulado;
+            decimal pagoRestante = dto.monto_pagado + pagoAcumuladoDia;
 
             switch (dto.tipo_pago)
             {
                 case "solo_mora":
-                    SoloMora(res, pendientes, congelados, prestamo, fechaPago, ref pagoRestante);
-                    res.saldo_nuevo = prestamo.saldo_actual;
+                    AplicarSoloMora(res, pendientes, congelados, prestamo, fechaPago, ref pagoRestante);
+                    res.saldo_nuevo = prestamo.saldo_actual; // mora no reduce capital
                     break;
 
                 case "solo_capital":
-                    SoloCapital(res, pendientes, prestamo, dto.monto_pagado);
+                    AplicarSoloCapital(res, pendientes, prestamo, acum, dto.monto_pagado);
+                    res.saldo_nuevo = Math.Max(0m, prestamo.saldo_actual - res.capital_total);
                     break;
 
                 case "solo_interes":
-                    SoloInteres(res, pendientes, prestamo, dto.monto_pagado);
+                    AplicarSoloInteres(res, pendientes, acum, dto.monto_pagado);
+                    res.saldo_nuevo = prestamo.saldo_actual; // interés no reduce capital
                     break;
 
                 default: // parcialidad, parcialidad_mora, pago_total
-                    string? err = PorPeriodos(res, pendientes, prestamo, dto.tipo_pago, fechaPago, dto.monto_pagado, ref pagoRestante);
+                {
+                    string? err = AplicarPorPeriodos(res, pendientes, prestamo, dto.tipo_pago,
+                                                      fechaPago, dto.monto_pagado, acum, ref pagoRestante);
                     if (err != null) return Err(res, err);
-                    int nCerrados = res.detalles.Count(d => d.periodo_cerrado);
-                    res.saldo_nuevo = pendientes.Skip(nCerrados).Sum(p => p.abono_capital);
+                    res.saldo_nuevo = Math.Max(0m, prestamo.saldo_actual - res.capital_total);
                     break;
+                }
             }
 
             return res;
         }
 
-        // ── solo_mora ─────────────────────────────────────────────────────
+        // ─────────────────────────────────────────────────────────────────
+        // CalcMax — máximo permitido usando pendientes reales desde pago_detalle
+        // ─────────────────────────────────────────────────────────────────
 
-        private void SoloMora(ResultadoDistribucion res,
+        private static decimal CalcMax(string tipo,
+            List<PeriodoAmortizacion> pendientes,
+            List<PeriodoAmortizacion> congelados,
+            Prestamo prestamo, Dictionary<int, AcumPd> acum, DateTime fechaPago)
+        {
+            AcumPd A(int id) => acum.GetValueOrDefault(id, new AcumPd(0, 0, 0));
+
+            return tipo switch
+            {
+                "solo_mora" =>
+                    congelados.Sum(p => Math.Max(0m, p.interes_moratorio - p.ahorro_por_pago))
+                    + pendientes.Sum(p =>
+                    {
+                        int d = Math.Max(0, (int)(fechaPago.Date - p.fecha_vencimiento.Date).TotalDays);
+                        decimal m = d > 0 ? Math.Round(prestamo.mora_diaria * d, 2) : 0m;
+                        return Math.Max(0m, m - p.ahorro_por_pago);
+                    }),
+
+                "solo_capital" =>
+                    pendientes.Sum(p => Math.Max(0m, p.abono_capital - A(p.periodo_id).Cap)),
+
+                "solo_interes" =>
+                    pendientes.Sum(p =>
+                        Math.Max(0m, p.interes_normal - A(p.periodo_id).Int) +
+                        Math.Max(0m, p.interes_iva   - A(p.periodo_id).Iva)),
+
+                "parcialidad" =>
+                    pendientes.Sum(p =>
+                        Math.Max(0m, p.abono_capital  - A(p.periodo_id).Cap) +
+                        Math.Max(0m, p.interes_normal - A(p.periodo_id).Int) +
+                        Math.Max(0m, p.interes_iva    - A(p.periodo_id).Iva)),
+
+                _ => // parcialidad_mora, pago_total
+                    pendientes.Sum(p =>
+                    {
+                        var a = A(p.periodo_id);
+                        int d = Math.Max(0, (int)(fechaPago.Date - p.fecha_vencimiento.Date).TotalDays);
+                        decimal mora = d > 0 ? Math.Round(prestamo.mora_diaria * d, 2) : 0m;
+                        return Math.Max(0m, p.abono_capital  - a.Cap) +
+                               Math.Max(0m, p.interes_normal - a.Int) +
+                               Math.Max(0m, p.interes_iva    - a.Iva) +
+                               Math.Max(0m, mora - p.ahorro_por_pago);
+                    }),
+            };
+        }
+
+        // ─────────────────────────────────────────────────────────────────
+        // solo_mora — aplica mora a congelados primero, luego a pendientes
+        // Nunca cierra periodos.
+        // ─────────────────────────────────────────────────────────────────
+
+        private void AplicarSoloMora(ResultadoDistribucion res,
             List<PeriodoAmortizacion> pendientes,
             List<PeriodoAmortizacion> congelados,
             Prestamo prestamo, DateTime fechaPago, ref decimal pagoRestante)
@@ -178,7 +249,7 @@ namespace ApiEjemplo.Services
                     periodo_id    = p.periodo_id,
                     periodo_num   = p.periodo,
                     mora_aplicada = aplicar,
-                    delta_ahorro  = aplicar,
+                    periodo_cerrado = false,
                 });
             }
             foreach (var p in pendientes)
@@ -196,124 +267,168 @@ namespace ApiEjemplo.Services
                     periodo_id    = p.periodo_id,
                     periodo_num   = p.periodo,
                     mora_aplicada = aplicar,
-                    delta_ahorro  = aplicar,
+                    periodo_cerrado = false,
                 });
             }
         }
 
-        // ── solo_capital ─────────────────────────────────────────────────
+        // ─────────────────────────────────────────────────────────────────
+        // solo_capital — aplica capital usando pendiente real.
+        // NUNCA cierra periodos (falta interés/IVA).
+        // ─────────────────────────────────────────────────────────────────
 
-        private void SoloCapital(ResultadoDistribucion res,
+        private static void AplicarSoloCapital(ResultadoDistribucion res,
             List<PeriodoAmortizacion> pendientes,
-            Prestamo prestamo, decimal monto)
+            Prestamo prestamo,
+            Dictionary<int, AcumPd> acum,
+            decimal monto)
         {
             decimal restante = monto;
-            int cerrados = 0;
-            decimal capParcial = 0;
-
             foreach (var p in pendientes)
             {
                 if (restante <= 0) break;
-                decimal capAplicar = Math.Min(restante, p.abono_capital);
+                var a = acum.GetValueOrDefault(p.periodo_id, new AcumPd(0, 0, 0));
+                decimal capPend = Math.Max(0m, p.abono_capital - a.Cap);
+                if (capPend <= 0) continue;
+                decimal capAplicar = Math.Min(restante, capPend);
                 res.capital_total += capAplicar;
                 restante          -= capAplicar;
-                bool cerrado = capAplicar >= p.abono_capital - 0.01m;
-                if (cerrado) cerrados++;
-                else capParcial = capAplicar;
                 res.detalles.Add(new DetallePerPeriodo
                 {
                     periodo_id       = p.periodo_id,
                     periodo_num      = p.periodo,
                     capital_aplicado = capAplicar,
-                    periodo_cerrado  = cerrado,
-                    nuevo_estado     = 3,
+                    periodo_cerrado  = false, // solo_capital NUNCA cierra
                 });
             }
-            decimal saldoBase = pendientes.Skip(cerrados).Sum(p => p.abono_capital);
-            res.saldo_nuevo = Math.Max(0, saldoBase - capParcial);
         }
 
-        // ── solo_interes ─────────────────────────────────────────────────
+        // ─────────────────────────────────────────────────────────────────
+        // solo_interes — aplica interés+IVA usando pendiente real.
+        // NUNCA cierra periodos (falta capital).
+        // ─────────────────────────────────────────────────────────────────
 
-        private void SoloInteres(ResultadoDistribucion res,
+        private static void AplicarSoloInteres(ResultadoDistribucion res,
             List<PeriodoAmortizacion> pendientes,
-            Prestamo prestamo, decimal monto)
+            Dictionary<int, AcumPd> acum,
+            decimal monto)
         {
             decimal restante = monto;
             foreach (var p in pendientes)
             {
                 if (restante <= 0) break;
-                decimal intAplicar = Math.Min(restante, p.interes_normal);
-                restante           -= intAplicar;
-                decimal ivaAplicar = Math.Min(restante, p.interes_iva);
-                restante           -= ivaAplicar;
-                res.interes_total  += intAplicar;
-                res.iva_total      += ivaAplicar;
+                var a = acum.GetValueOrDefault(p.periodo_id, new AcumPd(0, 0, 0));
+                decimal intPend = Math.Max(0m, p.interes_normal - a.Int);
+                decimal ivaPend = Math.Max(0m, p.interes_iva    - a.Iva);
+                if (intPend + ivaPend <= 0) continue;
+                decimal intA = Math.Min(restante, intPend); restante -= intA;
+                decimal ivaA = Math.Min(restante, ivaPend); restante -= ivaA;
+                res.interes_total += intA;
+                res.iva_total     += ivaA;
                 res.detalles.Add(new DetallePerPeriodo
                 {
                     periodo_id       = p.periodo_id,
                     periodo_num      = p.periodo,
-                    interes_aplicado = intAplicar,
-                    iva_aplicado     = ivaAplicar,
+                    interes_aplicado = intA,
+                    iva_aplicado     = ivaA,
+                    periodo_cerrado  = false, // solo_interes NUNCA cierra
                 });
             }
-            res.saldo_nuevo = prestamo.saldo_actual;
         }
 
-        // ── parcialidad / parcialidad_mora / pago_total ───────────────────
+        // ─────────────────────────────────────────────────────────────────
+        // parcialidad / parcialidad_mora / pago_total
+        // Descuenta pago_detalle existente antes de calcular el costo del periodo.
+        // Un periodo cierra solo cuando cap+int+iva acumulados lo cubren todo.
+        // ─────────────────────────────────────────────────────────────────
 
-        private string? PorPeriodos(ResultadoDistribucion res,
+        private static string? AplicarPorPeriodos(ResultadoDistribucion res,
             List<PeriodoAmortizacion> pendientes,
             Prestamo prestamo, string tipoPago,
-            DateTime fechaPago, decimal montoOriginal, ref decimal pagoRestante)
+            DateTime fechaPago, decimal montoOriginal,
+            Dictionary<int, AcumPd> acum, ref decimal pagoRestante)
         {
             foreach (var p in pendientes)
             {
-                int     diasMora    = Math.Max(0, (int)(fechaPago.Date - p.fecha_vencimiento.Date).TotalDays);
-                decimal moraPeriodo = diasMora > 0 ? Math.Round(prestamo.mora_diaria * diasMora, 2) : 0m;
-                decimal moraEfec    = Math.Max(0m, moraPeriodo - p.ahorro_por_pago);
+                var a = acum.GetValueOrDefault(p.periodo_id, new AcumPd(0, 0, 0));
 
+                // Pendiente real (restando lo ya pagado en pago_detalle)
+                decimal capPend  = Math.Max(0m, p.abono_capital  - a.Cap);
+                decimal intPend  = Math.Max(0m, p.interes_normal - a.Int);
+                decimal ivaPend  = Math.Max(0m, p.interes_iva    - a.Iva);
+
+                int d = Math.Max(0, (int)(fechaPago.Date - p.fecha_vencimiento.Date).TotalDays);
+                decimal moraBruta = d > 0 ? Math.Round(prestamo.mora_diaria * d, 2) : 0m;
+                decimal moraPend  = Math.Max(0m, moraBruta - p.ahorro_por_pago);
+
+                // Costo del periodo para este tipo de pago
                 decimal costo = tipoPago == "parcialidad"
-                    ? p.abono_capital + p.interes_normal + p.interes_iva
-                    : p.abono_capital + p.interes_normal + p.interes_iva + moraEfec;
+                    ? capPend + intPend + ivaPend
+                    : capPend + intPend + ivaPend + moraPend;
+
+                if (costo <= 0.01m) continue; // ya cubierto — saltar
 
                 if (pagoRestante >= costo - 0.05m)
                 {
-                    pagoRestante     -= costo;
-                    decimal moraCub   = tipoPago == "parcialidad" ? 0m : moraEfec;
-                    res.capital_total += p.abono_capital;
-                    res.interes_total += p.interes_normal;
-                    res.iva_total     += p.interes_iva;
-                    res.mora_total    += moraCub;
+                    // Cobertura completa de este periodo
+                    pagoRestante -= costo;
+                    decimal moraCub = tipoPago == "parcialidad" ? 0m : moraPend;
 
-                    bool teniaMora = moraEfec > 0;
-                    int nuevoEstado = (tipoPago == "parcialidad" && teniaMora) ? 5 : 3;
+                    // Determinar si cierra: cap+int+iva acumulados cubren el total del periodo
+                    decimal capTotal = a.Cap + capPend;
+                    decimal intTotal = a.Int + intPend;
+                    decimal ivaTotal = a.Iva + ivaPend;
+                    bool cerrado = capTotal >= p.abono_capital  - 0.01m
+                                && intTotal >= p.interes_normal - 0.01m
+                                && ivaTotal >= p.interes_iva    - 0.01m;
+
+                    bool moraCubierta = tipoPago != "parcialidad"
+                        && (p.ahorro_por_pago + moraCub) >= moraBruta - 0.01m;
+                    int nuevoEstado = cerrado
+                        ? (moraBruta <= 0.01m || moraCubierta ? 3 : 5)
+                        : 1;
+
+                    res.capital_total  += capPend;
+                    res.interes_total  += intPend;
+                    res.iva_total      += ivaPend;
+                    res.mora_total     += moraCub;
 
                     res.detalles.Add(new DetallePerPeriodo
                     {
                         periodo_id        = p.periodo_id,
                         periodo_num       = p.periodo,
-                        capital_aplicado  = p.abono_capital,
-                        interes_aplicado  = p.interes_normal,
-                        iva_aplicado      = p.interes_iva,
+                        capital_aplicado  = capPend,
+                        interes_aplicado  = intPend,
+                        iva_aplicado      = ivaPend,
                         mora_aplicada     = moraCub,
-                        periodo_cerrado   = true,
+                        periodo_cerrado   = cerrado,
                         nuevo_estado      = nuevoEstado,
-                        dias_moratorio    = diasMora,
-                        interes_moratorio = moraEfec,
+                        dias_moratorio    = d,
+                        interes_moratorio = moraBruta,
                     });
                 }
-                else if (tipoPago == "parcialidad" && pagoRestante > 0)
+                else if (tipoPago == "parcialidad" && pagoRestante > 0.01m)
                 {
-                    // Pago parcial del primer periodo incompleto
+                    // Pago parcial del primer periodo incompleto (solo para parcialidad)
                     decimal sob  = pagoRestante;
-                    decimal intA = Math.Min(sob, p.interes_normal); sob -= intA;
-                    decimal ivaA = Math.Min(sob, p.interes_iva);    sob -= ivaA;
-                    decimal capA = sob;
-                    res.interes_total += intA;
-                    res.iva_total     += ivaA;
-                    res.capital_total += capA;
-                    pagoRestante       = 0m;
+                    decimal intA = Math.Min(sob, intPend); sob -= intA;
+                    decimal ivaA = Math.Min(sob, ivaPend); sob -= ivaA;
+                    decimal capA = Math.Min(sob, capPend);
+
+                    // ¿El parcial completa la cobertura al combinar con acum previo?
+                    decimal capTotal = a.Cap + capA;
+                    decimal intTotal = a.Int + intA;
+                    decimal ivaTotal = a.Iva + ivaA;
+                    bool cerrado = capTotal >= p.abono_capital  - 0.01m
+                                && intTotal >= p.interes_normal - 0.01m
+                                && ivaTotal >= p.interes_iva    - 0.01m;
+                    int nuevoEstado = cerrado ? (moraBruta > 0.01m ? 5 : 3) : 1;
+
+                    res.capital_total  += capA;
+                    res.interes_total  += intA;
+                    res.iva_total      += ivaA;
+                    pagoRestante        = 0m;
+
                     res.detalles.Add(new DetallePerPeriodo
                     {
                         periodo_id       = p.periodo_id,
@@ -321,33 +436,142 @@ namespace ApiEjemplo.Services
                         capital_aplicado = capA,
                         interes_aplicado = intA,
                         iva_aplicado     = ivaA,
-                        periodo_cerrado  = false,
+                        periodo_cerrado  = cerrado,
+                        nuevo_estado     = nuevoEstado,
+                        dias_moratorio   = d,
+                        interes_moratorio = moraBruta,
                     });
                     break;
                 }
-                else if (tipoPago != "parcialidad" && moraEfec > 0 && pagoRestante <= moraEfec + 0.05m)
+                else if (tipoPago != "parcialidad" && moraPend > 0.01m && pagoRestante <= moraPend + 0.05m)
                 {
-                    // Solo mora del primer periodo — acumular sin cerrar
-                    decimal moraAplicar = pagoRestante;
-                    res.mora_total  += moraAplicar;
-                    pagoRestante     = 0m;
+                    // Solo cubre mora del primer periodo — acumular sin cerrar
+                    res.mora_total  += pagoRestante;
                     res.detalles.Add(new DetallePerPeriodo
                     {
-                        periodo_id    = p.periodo_id,
-                        periodo_num   = p.periodo,
-                        mora_aplicada = moraAplicar,
-                        delta_ahorro  = moraAplicar,
+                        periodo_id      = p.periodo_id,
+                        periodo_num     = p.periodo,
+                        mora_aplicada   = pagoRestante,
+                        periodo_cerrado = false,
                     });
+                    pagoRestante = 0m;
                     break;
                 }
                 else
                 {
-                    return $"El monto ({montoOriginal:N2}) no alcanza para cerrar el período completo " +
+                    return $"El monto ({montoOriginal:N2}) no alcanza para cerrar el período " +
                            $"(${costo:N2}). Para pagar solo mora use tipo_pago=solo_mora.";
                 }
             }
             return null;
         }
+
+        // ─────────────────────────────────────────────────────────────────
+        // RecalcularEstadoPeriodo
+        // Lee pago_detalle de la DB (incluyendo los recién guardados) y
+        // determina si el periodo debe cerrarse. Muta el objeto pa pasado.
+        // Llamar DESPUÉS de guardar los nuevos pago_detalle en DB.
+        // ─────────────────────────────────────────────────────────────────
+
+        public async Task<int> RecalcularEstadoPeriodo(
+            PeriodoAmortizacion pa, Prestamo prestamo, DateTime referencia)
+        {
+            var acum = await _context.PagoDetalles
+                .Where(pd => pd.periodo_id == pa.periodo_id)
+                .Join(_context.Pagos.Where(p => p.estatus == EstatusPago.APLICADO),
+                      pd => pd.pago_id, p => p.pago_id, (pd, _) => pd)
+                .GroupBy(_ => 1)
+                .Select(g => new
+                {
+                    cap  = g.Sum(x => x.capital_aplicado),
+                    int_ = g.Sum(x => x.interes_aplicado),
+                    iva  = g.Sum(x => x.iva_aplicado),
+                })
+                .FirstOrDefaultAsync();
+
+            decimal capAcum = acum?.cap  ?? 0;
+            decimal intAcum = acum?.int_ ?? 0;
+            decimal ivaAcum = acum?.iva  ?? 0;
+
+            bool capOk = capAcum >= pa.abono_capital  - 0.01m;
+            bool intOk = intAcum >= pa.interes_normal - 0.01m;
+            bool ivaOk = ivaAcum >= pa.interes_iva    - 0.01m;
+
+            int dias = Math.Max(0, (int)(referencia.Date - pa.fecha_vencimiento.Date).TotalDays);
+            decimal moraBruta = dias > 0 && prestamo.mora_diaria > 0
+                ? Math.Round(prestamo.mora_diaria * dias, 2) : 0m;
+
+            if (!capOk || !intOk || !ivaOk)
+            {
+                // Periodo no cubierto — mantener pendiente
+                pa.estado_pago      = 1;
+                pa.fecha_pagado     = null;
+                pa.dias_moratorio   = dias;
+                pa.interes_moratorio = moraBruta;
+                return 1;
+            }
+
+            // Todos cubiertos — cerrar según mora
+            bool moraCubierta = pa.ahorro_por_pago >= moraBruta - 0.01m;
+            int nuevoEstado = moraCubierta ? 3 : 5;
+            pa.estado_pago      = nuevoEstado;
+            pa.fecha_pagado     ??= referencia; // preservar fecha original si ya existía
+            pa.dias_moratorio   = dias;
+            pa.interes_moratorio = moraBruta;
+            return nuevoEstado;
+        }
+
+        // ─────────────────────────────────────────────────────────────────
+        // RecalcularSaldo
+        // saldo = monto - capital de pagos con detalle (pago_detalle)
+        //               - capital de pagos legados sin detalle (pago.abono_capital)
+        // ─────────────────────────────────────────────────────────────────
+
+        public async Task<decimal> RecalcularSaldo(int prestamoId, decimal montoOriginal)
+        {
+            // IDs de pagos que tienen al menos un pago_detalle
+            var pagosConDetalle = await _context.PagoDetalles
+                .Where(pd => pd.prestamo_id == prestamoId)
+                .Select(pd => pd.pago_id)
+                .Distinct()
+                .ToListAsync();
+
+            // Capital de pagos CON detalle (usar pago_detalle.capital_aplicado)
+            decimal capNuevo = await _context.PagoDetalles
+                .Where(pd => pd.prestamo_id == prestamoId && pd.periodo_id != null)
+                .Join(_context.Pagos.Where(p => p.estatus == EstatusPago.APLICADO),
+                      pd => pd.pago_id, p => p.pago_id, (pd, _) => pd)
+                .SumAsync(pd => (decimal?)pd.capital_aplicado) ?? 0m;
+
+            // Capital de pagos legados SIN detalle (usar pago.abono_capital)
+            decimal capLegado = await _context.Pagos
+                .Where(p => p.prestamo_id == prestamoId
+                         && p.estatus == EstatusPago.APLICADO
+                         && !pagosConDetalle.Contains(p.pago_id))
+                .SumAsync(p => (decimal?)p.abono_capital) ?? 0m;
+
+            return Math.Max(0m, montoOriginal - capNuevo - capLegado);
+        }
+
+        // ─────────────────────────────────────────────────────────────────
+        // RecalcularEstatus
+        // LIQUIDADO si saldo <= 0; ATRASADO si hay periodo vencido pendiente; ACTIVO en otro caso.
+        // ─────────────────────────────────────────────────────────────────
+
+        public async Task<EstatusPrestamo> RecalcularEstatus(
+            int prestamoId, decimal saldo, DateTime referencia)
+        {
+            if (saldo <= 0.01m) return EstatusPrestamo.LIQUIDADO;
+
+            bool hayVencido = await _context.PeriodosAmortizacion
+                .AnyAsync(pa => pa.prestamo_id == prestamoId
+                             && pa.estado_pago == 1
+                             && pa.fecha_vencimiento < referencia);
+
+            return hayVencido ? EstatusPrestamo.ATRASADO : EstatusPrestamo.ACTIVO;
+        }
+
+        // ── Helper privado ────────────────────────────────────────────────
 
         private static ResultadoDistribucion Err(ResultadoDistribucion r, string msg)
         {

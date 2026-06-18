@@ -13,7 +13,9 @@ namespace ApiEjemplo.Models
         [Required]
         public int pago_id { get; set; }
 
-        // Null para registros que no afectan un periodo específico (e.g. ahorro_por_pago global)
+        [Required]
+        public int prestamo_id { get; set; }
+
         public int? periodo_id { get; set; }
 
         [Column(TypeName = "decimal(12,4)")]
@@ -28,7 +30,7 @@ namespace ApiEjemplo.Models
         [Column(TypeName = "decimal(12,4)")]
         public decimal mora_aplicada { get; set; } = 0;
 
-        // true si el pago cerró el periodo (estado_pago 2/3/5); false si fue parcial (ahorro_por_pago, capital parcial)
+        // true cuando la acumulación total desde pago_detalle cierra el periodo (estado_pago 3 o 5)
         public bool periodo_cerrado { get; set; } = false;
 
         [MaxLength(30)]
@@ -36,6 +38,9 @@ namespace ApiEjemplo.Models
 
         [JsonIgnore]
         public Pago Pago { get; set; } = null!;
+
+        [JsonIgnore]
+        public Prestamo? Prestamo { get; set; }
 
         [JsonIgnore]
         public PeriodoAmortizacion? Periodo { get; set; }

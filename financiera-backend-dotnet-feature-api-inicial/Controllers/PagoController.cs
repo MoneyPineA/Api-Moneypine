@@ -175,6 +175,9 @@ namespace ApiEjemplo.Controllers
         [HttpPost("preview")]
         public async Task<IActionResult> Preview([FromBody] PagoCreateDTO dto)
         {
+            if (!AplicacionPagoService.TipoPagoValido(dto.tipo_pago))
+                return BadRequest($"tipo_pago '{dto.tipo_pago}' no válido.");
+
             var res = await _motorPago.CalcularDistribucion(dto);
             if (!res.ok)
                 return BadRequest(res.error);
@@ -202,83 +205,35 @@ namespace ApiEjemplo.Controllers
 
         // =====================================================
         // POST: api/Pago
-        // Registra un pago usando el motor unificado
         // =====================================================
         [Authorize]
         [HttpPost]
         public async Task<IActionResult> Create([FromBody] PagoCreateDTO dto)
         {
+            // 1. Validar tipo_pago con whitelist
+            if (!AplicacionPagoService.TipoPagoValido(dto.tipo_pago))
+                return BadRequest($"tipo_pago '{dto.tipo_pago}' no válido.");
+
             using var transaction = await _context.Database.BeginTransactionAsync();
 
-            // Calcular distribución (lectura, sin efectos secundarios)
+            // 2. Calcular distribución (puro, sin efectos secundarios)
             var dist = await _motorPago.CalcularDistribucion(dto);
-            if (!dist.ok)
-                return BadRequest(dist.error);
+            if (!dist.ok) return BadRequest(dist.error);
 
-            // Cargar entidades CON tracking para aplicar cambios
-            var prestamo = await _context.Prestamos.FirstOrDefaultAsync(p => p.prestamo_id == dto.prestamo_id);
+            // 3. Cargar préstamo con tracking
+            var prestamo = await _context.Prestamos
+                .FirstOrDefaultAsync(p => p.prestamo_id == dto.prestamo_id);
             if (prestamo == null) return BadRequest("El préstamo no existe");
 
             DateTime fechaPago = dto.fecha_pago.HasValue
                 ? DateTime.SpecifyKind(dto.fecha_pago.Value.Date, DateTimeKind.Unspecified)
                 : TimeHelper.GetMexicoTime();
 
-            // ── Aplicar cambios en periodos ───────────────────────────────
-
-            foreach (var det in dist.detalles)
-            {
-                if (det.periodo_id == 0) continue;
-
-                var periodo = await _context.PeriodosAmortizacion.FindAsync(det.periodo_id);
-                if (periodo == null) continue;
-
-                if (det.periodo_cerrado)
-                {
-                    periodo.estado_pago      = det.nuevo_estado;
-                    periodo.fecha_pagado     = fechaPago;
-                    periodo.dias_moratorio   = det.dias_moratorio;
-                    periodo.interes_moratorio = det.interes_moratorio;
-                }
-                else if (det.delta_ahorro > 0)
-                {
-                    periodo.ahorro_por_pago += det.delta_ahorro;
-                }
-                _context.PeriodosAmortizacion.Update(periodo);
-            }
-
-            // ── Actualizar saldo y estatus del préstamo ───────────────────
-
-            prestamo.saldo_actual = dist.saldo_nuevo;
-
-            // fecha_proximo_pago: siguiente periodo pendiente (estado=1)
-            var siguientePendiente = await _context.PeriodosAmortizacion
-                .Where(pa => pa.prestamo_id == dto.prestamo_id && pa.estado_pago == 1)
-                .OrderBy(pa => pa.periodo)
-                .FirstOrDefaultAsync();
-
-            if (siguientePendiente != null)
-            {
-                prestamo.fecha_proximo_pago = siguientePendiente.fecha_vencimiento;
-                if (prestamo.estatus == EstatusPrestamo.ATRASADO)
-                    prestamo.estatus = EstatusPrestamo.ACTIVO;
-            }
-
-            if (prestamo.saldo_actual <= 0)
-            {
-                prestamo.estatus  = EstatusPrestamo.LIQUIDADO;
-                prestamo.fecha_fin = fechaPago;
-            }
-            else if (dist.mora_total > 0 && dist.capital_total == 0)
-            {
-                prestamo.estatus = EstatusPrestamo.ATRASADO;
-            }
-
-            // ── Crear registro de pago ────────────────────────────────────
-
             int? usuarioId = null;
             if (int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var pid))
                 usuarioId = pid;
 
+            // 4. Crear registro Pago (con saldo_restante estimado; se actualiza abajo)
             var pago = new Pago
             {
                 prestamo_id    = prestamo.prestamo_id,
@@ -295,29 +250,88 @@ namespace ApiEjemplo.Controllers
                 estatus        = EstatusPago.APLICADO,
             };
             _context.Pagos.Add(pago);
-            _context.Prestamos.Update(prestamo);
-            await _context.SaveChangesAsync(); // pago.pago_id ahora disponible
+            await _context.SaveChangesAsync(); // necesario para obtener pago.pago_id
 
-            // ── Crear registros PagoDetalle ───────────────────────────────
+            // 5. Actualizar ahorro_por_pago y crear registros PagoDetalle
+            var periodosAfectados = new HashSet<int>();
             foreach (var det in dist.detalles)
             {
+                if (det.periodo_id is null or 0) continue;
+
+                // Mora contribuye a ahorro_por_pago del periodo
+                if (det.mora_aplicada > 0)
+                {
+                    var per = await _context.PeriodosAmortizacion.FindAsync(det.periodo_id.Value);
+                    if (per != null)
+                    {
+                        per.ahorro_por_pago += det.mora_aplicada;
+                        _context.PeriodosAmortizacion.Update(per);
+                    }
+                }
+
                 _context.PagoDetalles.Add(new PagoDetalle
                 {
                     pago_id          = pago.pago_id,
-                    periodo_id       = det.periodo_id > 0 ? det.periodo_id : null,
-                    capital_aplicado  = det.capital_aplicado,
-                    interes_aplicado  = det.interes_aplicado,
-                    iva_aplicado      = det.iva_aplicado,
-                    mora_aplicada     = det.mora_aplicada,
-                    periodo_cerrado   = det.periodo_cerrado,
-                    tipo_pago         = dto.tipo_pago,
+                    prestamo_id      = dto.prestamo_id,
+                    periodo_id       = det.periodo_id,
+                    capital_aplicado = det.capital_aplicado,
+                    interes_aplicado = det.interes_aplicado,
+                    iva_aplicado     = det.iva_aplicado,
+                    mora_aplicada    = det.mora_aplicada,
+                    periodo_cerrado  = false, // actualizado en el paso 6
+                    tipo_pago        = dto.tipo_pago,
                 });
+
+                periodosAfectados.Add(det.periodo_id.Value);
             }
+            await _context.SaveChangesAsync(); // guarda pago_detalle + ahorro_por_pago
+
+            // 6. Recalcular estado de cada periodo afectado (lee pago_detalle recién guardados)
+            var periodoEstados = new Dictionary<int, int>();
+            foreach (var periodoId in periodosAfectados)
+            {
+                var pa = await _context.PeriodosAmortizacion.FindAsync(periodoId);
+                if (pa == null) continue;
+                int nuevoEstado = await _motorPago.RecalcularEstadoPeriodo(pa, prestamo, fechaPago);
+                periodoEstados[periodoId] = nuevoEstado;
+                _context.PeriodosAmortizacion.Update(pa);
+            }
+
+            // Sincronizar periodo_cerrado en PagoDetalle con el estado real calculado
+            var detallesGuardados = await _context.PagoDetalles
+                .Where(pd => pd.pago_id == pago.pago_id && pd.periodo_id != null)
+                .ToListAsync();
+            foreach (var pd in detallesGuardados)
+            {
+                if (periodoEstados.TryGetValue(pd.periodo_id!.Value, out int est))
+                    pd.periodo_cerrado = est == 3 || est == 5;
+            }
+
+            // 7. Recalcular saldo, estatus y fecha_proximo_pago del préstamo
+            prestamo.saldo_actual = await _motorPago.RecalcularSaldo(dto.prestamo_id, prestamo.monto);
+            prestamo.estatus = await _motorPago.RecalcularEstatus(dto.prestamo_id, prestamo.saldo_actual, fechaPago);
+
+            if (prestamo.estatus == EstatusPrestamo.LIQUIDADO)
+                prestamo.fecha_fin = fechaPago;
+
+            var siguientePend = await _context.PeriodosAmortizacion
+                .Where(pa => pa.prestamo_id == dto.prestamo_id && pa.estado_pago == 1)
+                .OrderBy(pa => pa.periodo)
+                .Select(pa => pa.fecha_vencimiento)
+                .FirstOrDefaultAsync();
+
+            if (siguientePend != default)
+                prestamo.fecha_proximo_pago = siguientePend;
+
+            // Actualizar saldo_restante en el pago con el valor real recalculado
+            pago.saldo_restante = prestamo.saldo_actual;
+
+            _context.Prestamos.Update(prestamo);
+            _context.Pagos.Update(pago);
             await _context.SaveChangesAsync();
             await transaction.CommitAsync();
 
-            // ── Actividad y notificación ──────────────────────────────────
-
+            // 8. Actividad y notificación
             var nombreCliente = await _context.Clientes
                 .Where(c => c.cliente_id == prestamo.cliente_id)
                 .Include(c => c.Usuario)
@@ -329,17 +343,17 @@ namespace ApiEjemplo.Controllers
             await _activityService.CreateActivity(
                 ActivityType.PAYMENT_RECEIVED,
                 prestamo.cliente_id,
-                dist.capital_total + dist.interes_total + dist.mora_total,
+                dto.monto_pagado,
                 NotificationLevel.POSITIVE,
-                description: $"Pago de ${dto.monto_pagado:N2} ({dto.tipo_pago}) al crédito #{prestamo.prestamo_id} del cliente {nombreCliente}",
+                description: $"Pago de ${dto.monto_pagado:N2} ({dto.tipo_pago}) al crédito #{prestamo.prestamo_id} de {nombreCliente}",
                 userId: usuarioId);
 
             var msg = prestamo.estatus == EstatusPrestamo.LIQUIDADO
                 ? $"Préstamo #{prestamo.prestamo_id} liquidado completamente"
                 : $"Pago registrado: ${dto.monto_pagado:N2} al préstamo #{prestamo.prestamo_id}";
-            var lvl = prestamo.estatus == EstatusPrestamo.LIQUIDADO
-                ? NotificationLevel.POSITIVE : NotificationLevel.NEUTRAL;
-            await _notificationService.CreateNotification(1, msg, lvl);
+            await _notificationService.CreateNotification(1, msg,
+                prestamo.estatus == EstatusPrestamo.LIQUIDADO
+                    ? NotificationLevel.POSITIVE : NotificationLevel.NEUTRAL);
 
             return CreatedAtAction(nameof(GetPago), new { id = pago.pago_id }, new
             {
@@ -377,8 +391,8 @@ namespace ApiEjemplo.Controllers
 
         // =====================================================
         // DELETE: api/Pago/5
-        // Usa PagoDetalle cuando existe (pagos nuevos); cae en lógica
-        // legada basada en fecha_pagado para pagos históricos.
+        // Camino nuevo: revierte exacto via pago_detalle.
+        // Camino legado: búsqueda por fecha_pagado para pagos históricos sin detalle.
         // =====================================================
         [Authorize(Roles = "ADMIN")]
         [HttpDelete("{id}")]
@@ -396,61 +410,62 @@ namespace ApiEjemplo.Controllers
                 .Where(pd => pd.pago_id == id)
                 .ToListAsync();
 
-            var hoy = TimeHelper.GetMexicoTime().Date;
+            var now = TimeHelper.GetMexicoTime();
 
             if (detalles.Any())
             {
-                // ── Camino nuevo: usar pago_detalle para reversión exacta ──
+                // ── Camino nuevo: reversión exacta desde pago_detalle ──────
 
-                decimal saldoRevertir = 0m;
+                // IDs de periodos afectados (antes de borrar)
+                var periodosIds = detalles
+                    .Where(d => d.periodo_id.HasValue)
+                    .Select(d => d.periodo_id!.Value)
+                    .Distinct()
+                    .ToList();
 
-                foreach (var det in detalles)
+                // Revertir ahorro_por_pago (mora que este pago había acumulado)
+                foreach (var det in detalles.Where(d => d.mora_aplicada > 0 && d.periodo_id.HasValue))
                 {
-                    if (det.periodo_id == null) continue;
-                    var periodo = await _context.PeriodosAmortizacion.FindAsync(det.periodo_id.Value);
-                    if (periodo == null) continue;
+                    var pa = await _context.PeriodosAmortizacion.FindAsync(det.periodo_id!.Value);
+                    if (pa != null)
+                    {
+                        pa.ahorro_por_pago = Math.Max(0m, pa.ahorro_por_pago - det.mora_aplicada);
+                        _context.PeriodosAmortizacion.Update(pa);
+                    }
+                }
+                await _context.SaveChangesAsync(); // guarda ahorro_por_pago actualizado
 
-                    if (det.periodo_cerrado)
-                    {
-                        // Revertir el cierre del periodo
-                        periodo.estado_pago  = 1;
-                        periodo.fecha_pagado = null;
-                        int diasMora = Math.Max(0, (int)(hoy - periodo.fecha_vencimiento.Date).TotalDays);
-                        periodo.dias_moratorio    = diasMora;
-                        periodo.interes_moratorio = diasMora > 0 && prestamo.mora_diaria > 0
-                            ? Math.Round(prestamo.mora_diaria * diasMora, 2)
-                            : 0m;
-                        saldoRevertir += det.capital_aplicado;
-                    }
-                    else if (det.mora_aplicada > 0)
-                    {
-                        // Revertir ahorro_por_pago (solo_mora o mora parcial)
-                        periodo.ahorro_por_pago = Math.Max(0m, periodo.ahorro_por_pago - det.mora_aplicada);
-                    }
-                    _context.PeriodosAmortizacion.Update(periodo);
+                // Eliminar pago (cascade elimina sus pago_detalle)
+                _context.Pagos.Remove(pago);
+                await _context.SaveChangesAsync();
+
+                // Recalcular estado de cada periodo (ahora sin el pago_detalle borrado)
+                foreach (var periodoId in periodosIds)
+                {
+                    var pa = await _context.PeriodosAmortizacion.FindAsync(periodoId);
+                    if (pa == null) continue;
+                    await _motorPago.RecalcularEstadoPeriodo(pa, prestamo, now);
+                    _context.PeriodosAmortizacion.Update(pa);
                 }
 
-                prestamo.saldo_actual += saldoRevertir;
+                // Recalcular saldo, estatus y fecha_proximo_pago
+                prestamo.saldo_actual = await _motorPago.RecalcularSaldo(pago.prestamo_id, prestamo.monto);
+                prestamo.estatus = await _motorPago.RecalcularEstatus(pago.prestamo_id, prestamo.saldo_actual, now);
 
-                // solo_capital parcial (periodo no cerrado, capital aplicado, sin mora)
-                var capSinCierre = detalles
-                    .Where(d => !d.periodo_cerrado && d.mora_aplicada == 0 && d.capital_aplicado > 0)
-                    .Sum(d => d.capital_aplicado);
-                prestamo.saldo_actual += capSinCierre;
+                if (prestamo.estatus != EstatusPrestamo.LIQUIDADO)
+                    prestamo.fecha_fin = null;
 
-                // Restaurar fecha_proximo_pago al vencimiento más antiguo revertido
-                var vencimientosRevertidos = new List<DateTime>();
-                foreach (var det in detalles.Where(d => d.periodo_cerrado && d.periodo_id != null))
-                {
-                    var periodo = await _context.PeriodosAmortizacion.FindAsync(det.periodo_id!.Value);
-                    if (periodo != null)
-                        vencimientosRevertidos.Add(periodo.fecha_vencimiento);
-                }
-                if (vencimientosRevertidos.Any())
-                    prestamo.fecha_proximo_pago = vencimientosRevertidos.Min();
+                var siguientePend = await _context.PeriodosAmortizacion
+                    .Where(pa => pa.prestamo_id == pago.prestamo_id && pa.estado_pago == 1)
+                    .OrderBy(pa => pa.periodo)
+                    .Select(pa => pa.fecha_vencimiento)
+                    .FirstOrDefaultAsync();
 
-                if (prestamo.estatus == EstatusPrestamo.LIQUIDADO)
-                    prestamo.estatus = EstatusPrestamo.ATRASADO;
+                if (siguientePend != default)
+                    prestamo.fecha_proximo_pago = siguientePend;
+
+                _context.Prestamos.Update(prestamo);
+                await _context.SaveChangesAsync();
             }
             else
             {
@@ -458,10 +473,12 @@ namespace ApiEjemplo.Controllers
 
                 if (pago.abono_capital == 0 && pago.mora_pagada > 0)
                 {
-                    // solo_mora legado
+                    // solo_mora legado: descontar ahorro_por_pago
                     decimal moraADescontar = pago.mora_pagada;
                     var congelados = await _context.PeriodosAmortizacion
-                        .Where(pa => pa.prestamo_id == pago.prestamo_id && pa.estado_pago == 5 && pa.ahorro_por_pago > 0)
+                        .Where(pa => pa.prestamo_id == pago.prestamo_id
+                                  && pa.estado_pago == 5
+                                  && pa.ahorro_por_pago > 0)
                         .OrderBy(pa => pa.periodo).ToListAsync();
                     foreach (var p in congelados)
                     {
@@ -473,7 +490,9 @@ namespace ApiEjemplo.Controllers
                     if (moraADescontar > 0)
                     {
                         var retraso = await _context.PeriodosAmortizacion
-                            .Where(pa => pa.prestamo_id == pago.prestamo_id && pa.estado_pago == 1 && pa.ahorro_por_pago > 0)
+                            .Where(pa => pa.prestamo_id == pago.prestamo_id
+                                      && pa.estado_pago == 1
+                                      && pa.ahorro_por_pago > 0)
                             .OrderBy(pa => pa.periodo).ToListAsync();
                         foreach (var p in retraso)
                         {
@@ -486,6 +505,7 @@ namespace ApiEjemplo.Controllers
                 }
                 else
                 {
+                    // parcialidad / parcialidad_mora legado: reabrir periodos por fecha_pagado
                     var periodosARevertir = await _context.PeriodosAmortizacion
                         .Where(pa => pa.prestamo_id == pago.prestamo_id
                                   && (pa.estado_pago == 2 || pa.estado_pago == 3 || pa.estado_pago == 5)
@@ -493,37 +513,42 @@ namespace ApiEjemplo.Controllers
                                   && pa.fecha_pagado.Value.Date == pago.fecha_pago.Date)
                         .OrderBy(pa => pa.periodo).ToListAsync();
 
-                    DateTime? fppRevertida = null;
                     foreach (var p in periodosARevertir)
                     {
                         p.estado_pago  = 1;
                         p.fecha_pagado = null;
-                        int dias = Math.Max(0, (int)(hoy - p.fecha_vencimiento.Date).TotalDays);
+                        int dias = Math.Max(0, (int)(now.Date - p.fecha_vencimiento.Date).TotalDays);
                         p.dias_moratorio    = dias;
                         p.interes_moratorio = dias > 0 && prestamo.mora_diaria > 0
                             ? Math.Round(prestamo.mora_diaria * dias, 2) : 0m;
                         _context.PeriodosAmortizacion.Update(p);
-                        if (fppRevertida == null || p.fecha_vencimiento < fppRevertida)
-                            fppRevertida = p.fecha_vencimiento;
                     }
-                    if (fppRevertida.HasValue)
-                        prestamo.fecha_proximo_pago = fppRevertida;
-
-                    decimal saldoDB = await _context.PeriodosAmortizacion
-                        .Where(pa => pa.prestamo_id == pago.prestamo_id && pa.estado_pago == 1)
-                        .SumAsync(pa => pa.abono_capital);
-                    prestamo.saldo_actual = saldoDB + periodosARevertir.Sum(p => p.abono_capital);
-
-                    if (prestamo.estatus == EstatusPrestamo.LIQUIDADO)
-                        prestamo.estatus = EstatusPrestamo.ATRASADO;
                 }
+
+                _context.Pagos.Remove(pago);
+                await _context.SaveChangesAsync(); // pago eliminado
+
+                // Recalcular saldo y estatus con la nueva fórmula (legado también se beneficia)
+                prestamo.saldo_actual = await _motorPago.RecalcularSaldo(pago.prestamo_id, prestamo.monto);
+                prestamo.estatus = await _motorPago.RecalcularEstatus(pago.prestamo_id, prestamo.saldo_actual, now);
+
+                if (prestamo.estatus != EstatusPrestamo.LIQUIDADO)
+                    prestamo.fecha_fin = null;
+
+                var siguientePendLeg = await _context.PeriodosAmortizacion
+                    .Where(pa => pa.prestamo_id == pago.prestamo_id && pa.estado_pago == 1)
+                    .OrderBy(pa => pa.periodo)
+                    .Select(pa => pa.fecha_vencimiento)
+                    .FirstOrDefaultAsync();
+
+                if (siguientePendLeg != default)
+                    prestamo.fecha_proximo_pago = siguientePendLeg;
+
+                _context.Prestamos.Update(prestamo);
+                await _context.SaveChangesAsync();
             }
 
-            _context.Pagos.Remove(pago);
-            _context.Prestamos.Update(prestamo);
-            await _context.SaveChangesAsync();
             await transaction.CommitAsync();
-
             return NoContent();
         }
     }
