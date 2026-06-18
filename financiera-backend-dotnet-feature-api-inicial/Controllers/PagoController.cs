@@ -366,6 +366,20 @@ namespace ApiEjemplo.Controllers
                     }
                 }
             }
+            else if (dto.tipo_pago == "solo_capital")
+            {
+                // MONEYPINE-FIX: solo_capital requiere ajuste en tabla de amortizacion por periodo.
+                // El esquema periodo-basado no soporta reduccion de capital sin afectar consistencia de saldo.
+                return BadRequest("tipo_pago 'solo_capital' no disponible en esta version. " +
+                    "Use parcialidad para cubrir capital+interes por periodo, o contacte al administrador.");
+            }
+            else if (dto.tipo_pago == "solo_interes")
+            {
+                // MONEYPINE-FIX: solo_interes requiere tracking de interes pagado por periodo sin cerrar el periodo.
+                // El esquema actual no soporta pago parcial de interes sin riesgo de doble cobro futuro.
+                return BadRequest("tipo_pago 'solo_interes' no disponible en esta version. " +
+                    "Use parcialidad para cubrir capital+interes por periodo, o contacte al administrador.");
+            }
             else
             {
                 foreach (var p in periodosPendientes)
@@ -403,9 +417,24 @@ namespace ApiEjemplo.Controllers
                         pagoRestante          = 0m;
                         break;
                     }
+                    else if (dto.tipo_pago == "parcialidad" && pagoRestante > 0)
+                    {
+                        // MONEYPINE-FIX: abono parcial al periodo para parcialidad cuando el monto no cubre el costo completo
+                        // Distribuye: interes_normal primero, luego interes_iva, luego abono_capital
+                        decimal sobrante   = pagoRestante;
+                        decimal intAplicar = Math.Min(sobrante, p.interes_normal);
+                        interesPagado     += intAplicar;
+                        sobrante          -= intAplicar;
+                        decimal ivaAplicar = Math.Min(sobrante, p.interes_iva);
+                        ivaPagado         += ivaAplicar;
+                        sobrante          -= ivaAplicar;
+                        capitalPagado     += sobrante;
+                        pagoRestante       = 0m;
+                        break;
+                    }
                     else
                     {
-                        // Caso 2: monto cubre mora pero no el período completo — rechazar para evitar doble conteo
+                        // Caso 2: monto no alcanza para cerrar el período — rechazar para evitar doble conteo
                         return BadRequest($"El monto ({dto.monto_pagado:N2}) no alcanza para cerrar el período completo " +
                             $"(${costoPeriodo:N2}). Para pagar solo mora use tipo_pago=solo_mora.");
                     }
@@ -674,9 +703,20 @@ namespace ApiEjemplo.Controllers
                 .SumAsync(pa => pa.abono_capital);
             prestamo.saldo_actual = saldoYaPendiente + periodosARevertir.Sum(p => p.abono_capital);
 
-            // MONEYPINE-FIX: si estaba LIQUIDADO, revertir a ATRASADO al eliminar un pago
-            if (prestamo.estatus == EstatusPrestamo.LIQUIDADO)
-                prestamo.estatus = EstatusPrestamo.ATRASADO;
+            // MONEYPINE-FIX: restaurar estatus correcto al eliminar un pago
+            // Verifica periodos vencidos tanto en DB (ya pendientes) como los que se acaban de revertir
+            if (prestamo.estatus == EstatusPrestamo.LIQUIDADO || prestamo.estatus == EstatusPrestamo.ACTIVO)
+            {
+                var pendientesVencidosEnDb = await _context.PeriodosAmortizacion
+                    .Where(pa => pa.prestamo_id == pago.prestamo_id
+                              && pa.estado_pago == 1
+                              && pa.fecha_vencimiento < hoyDelete)
+                    .AnyAsync();
+                var revertidosVencidos = periodosARevertir.Any(p => p.fecha_vencimiento.Date < hoyDelete);
+                prestamo.estatus = (pendientesVencidosEnDb || revertidosVencidos)
+                    ? EstatusPrestamo.ATRASADO
+                    : EstatusPrestamo.ACTIVO;
+            }
 
             _context.Pagos.Remove(pago);
             _context.Prestamos.Update(prestamo);
