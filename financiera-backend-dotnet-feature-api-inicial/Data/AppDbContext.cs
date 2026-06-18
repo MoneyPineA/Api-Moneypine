@@ -43,6 +43,9 @@ namespace ApiEjemplo.Data
         // MONEYPINE-FIX: clientes auto-reportados al buró por mora >= 90 días
         public DbSet<BuroAutoReporte>   BuroAutoReportes   { get; set; }
 
+        // Detalle granular por periodo de cada pago aplicado
+        public DbSet<PagoDetalle>       PagoDetalles       { get; set; }
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
@@ -231,6 +234,22 @@ namespace ApiEjemplo.Data
                 .WithMany()
                 .HasForeignKey(a => a.cliente_id_aval)
                 .OnDelete(DeleteBehavior.Restrict);
+
+            // =======================
+            // PAGO DETALLE
+            // =======================
+            modelBuilder.Entity<PagoDetalle>()
+                .HasOne(pd => pd.Pago)
+                .WithMany()
+                .HasForeignKey(pd => pd.pago_id)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<PagoDetalle>()
+                .HasOne(pd => pd.Periodo)
+                .WithMany()
+                .HasForeignKey(pd => pd.periodo_id)
+                .OnDelete(DeleteBehavior.SetNull)
+                .IsRequired(false);
         }
     }
 }

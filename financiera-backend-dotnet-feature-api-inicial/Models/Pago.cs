@@ -44,6 +44,9 @@ namespace ApiEjemplo.Models
         // Método
         public string? metodo_pago { get; set; }
 
+        [MaxLength(30)]
+        public string? tipo_pago { get; set; }
+
         // Estatus (ENUM)
         [Required]
         public EstatusPago estatus { get; set; } = EstatusPago.APLICADO;
