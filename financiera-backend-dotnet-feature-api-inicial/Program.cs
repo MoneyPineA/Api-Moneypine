@@ -53,6 +53,11 @@ builder.Services.AddControllers()
 var connectionString = Environment.GetEnvironmentVariable("MySqlConnection") 
     ?? builder.Configuration.GetConnectionString("MySqlConnection");
 
+// MONEYPINE-FIX: asegurar utf8mb4 para caracteres españoles (Ñ, acentos, etc.)
+if (!string.IsNullOrEmpty(connectionString) &&
+    !connectionString.Contains("charset=", StringComparison.OrdinalIgnoreCase))
+    connectionString += ";charset=utf8mb4";
+
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseMySql(
         connectionString,
