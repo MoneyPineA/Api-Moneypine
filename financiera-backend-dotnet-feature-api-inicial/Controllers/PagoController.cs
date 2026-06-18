@@ -583,8 +583,21 @@ namespace ApiEjemplo.Controllers
             // MONEYPINE-FIX: saldo_actual derivado de periodos pendientes, no aritmética manual
             // Los periodos revertidos aún no están en DB (SaveChanges no ejecutado), los sumamos por separado
 
+            // MONEYPINE-FIX: buscar TODOS los periodos marcados por este pago ANTES del check solo_mora
+            // Criterios: mismo prestamo_id + estado_pago IN (2,3,5) + fecha_pagado coincide con fecha_pago del recibo
+            // estado_pago=2 cubre datos importados del sistema viejo; estado_pago=3 cubre pagos normales; estado_pago=5 cubre CONGELADO
+            var periodosARevertir = await _context.PeriodosAmortizacion
+                .Where(pa => pa.prestamo_id == pago.prestamo_id
+                          && (pa.estado_pago == 2 || pa.estado_pago == 3 || pa.estado_pago == 5)
+                          && pa.fecha_pagado.HasValue
+                          && pa.fecha_pagado.Value.Date == pago.fecha_pago.Date)
+                .OrderBy(pa => pa.periodo)
+                .ToListAsync();
+
             // Revertir solo_mora: reducir ahorro_por_pago en periodos CONGELADOS y RETRASO
-            if (pago.abono_capital == 0 && pago.mora_pagada > 0)
+            // MONEYPINE-FIX: solo aplica si NO hay periodos vinculados al pago (evita falsos positivos
+            // en pagos creados con bug donde abono_capital=0 pero el periodo SÍ quedó como PAGADO)
+            if (pago.abono_capital == 0 && pago.mora_pagada > 0 && !periodosARevertir.Any())
             {
                 decimal moraADescontar = pago.mora_pagada;
 
@@ -624,17 +637,6 @@ namespace ApiEjemplo.Controllers
                 Console.WriteLine($"[DELETE-PAGO] solo_mora revertido: {pago.mora_pagada:N2} descontado de ahorro_por_pago");
                 return NoContent();
             }
-
-            // MONEYPINE-FIX: buscar TODOS los periodos marcados por este pago
-            // Criterios: mismo prestamo_id + estado_pago IN (2,3,5) + fecha_pagado coincide con fecha_pago del recibo
-            // estado_pago=2 cubre datos importados del sistema viejo; estado_pago=3 cubre pagos normales; estado_pago=5 cubre CONGELADO
-            var periodosARevertir = await _context.PeriodosAmortizacion
-                .Where(pa => pa.prestamo_id == pago.prestamo_id
-                          && (pa.estado_pago == 2 || pa.estado_pago == 3 || pa.estado_pago == 5)
-                          && pa.fecha_pagado.HasValue
-                          && pa.fecha_pagado.Value.Date == pago.fecha_pago.Date)
-                .OrderBy(pa => pa.periodo)
-                .ToListAsync();
 
             Console.WriteLine($"[DELETE-PAGO] periodos a revertir: {periodosARevertir.Count} (fecha_pago={pago.fecha_pago:yyyy-MM-dd})");
 
