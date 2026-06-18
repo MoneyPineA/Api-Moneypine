@@ -640,13 +640,20 @@ namespace ApiEjemplo.Controllers
 
             // MONEYPINE-FIX: revertir TODOS los periodos encontrados, no solo el primero
             DateTime? fechaVencimientoMasAntigua = null;
+            var hoyDelete = TimeHelper.GetMexicoTime().Date;
             foreach (var p in periodosARevertir)
             {
                 Console.WriteLine($"[DELETE-PAGO] revirtiendo periodo_id={p.periodo_id} periodo={p.periodo} estado_pago={p.estado_pago} fecha_vencimiento={p.fecha_vencimiento:yyyy-MM-dd}");
-                p.estado_pago       = 1;
-                p.fecha_pagado      = null;
-                p.dias_moratorio    = 0;
-                p.interes_moratorio = 0;
+                p.estado_pago  = 1;
+                p.fecha_pagado = null;
+
+                // MONEYPINE-FIX: recalcular mora con fecha actual al revertir
+                int diasMora = Math.Max(0, (int)(hoyDelete - p.fecha_vencimiento.Date).TotalDays);
+                p.dias_moratorio    = diasMora;
+                p.interes_moratorio = diasMora > 0 && prestamo.mora_diaria > 0
+                    ? Math.Round(prestamo.mora_diaria * diasMora, 2)
+                    : 0m;
+
                 _context.PeriodosAmortizacion.Update(p);
 
                 // Guardar el vencimiento más antiguo para restaurar fecha_proximo_pago
