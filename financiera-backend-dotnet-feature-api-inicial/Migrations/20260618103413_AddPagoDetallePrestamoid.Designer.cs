@@ -4,6 +4,7 @@ using ApiEjemplo.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace ApiEjemplo.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260618103413_AddPagoDetallePrestamoid")]
+    partial class AddPagoDetallePrestamoid
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -666,9 +669,6 @@ namespace ApiEjemplo.Migrations
                     b.Property<decimal>("capital_aplicado")
                         .HasColumnType("decimal(12,4)");
 
-                    b.Property<DateTime>("fecha_creacion")
-                        .HasColumnType("datetime(6)");
-
                     b.Property<decimal>("interes_aplicado")
                         .HasColumnType("decimal(12,4)");
 
@@ -1263,7 +1263,7 @@ namespace ApiEjemplo.Migrations
                     b.HasOne("ApiEjemplo.Models.Prestamo", "Prestamo")
                         .WithMany()
                         .HasForeignKey("prestamo_id")
-                        .OnDelete(DeleteBehavior.Restrict)
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.Navigation("Pago");

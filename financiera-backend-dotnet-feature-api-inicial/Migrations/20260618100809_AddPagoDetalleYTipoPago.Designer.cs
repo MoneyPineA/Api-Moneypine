@@ -4,6 +4,7 @@ using ApiEjemplo.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace ApiEjemplo.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260618100809_AddPagoDetalleYTipoPago")]
+    partial class AddPagoDetalleYTipoPago
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -666,9 +669,6 @@ namespace ApiEjemplo.Migrations
                     b.Property<decimal>("capital_aplicado")
                         .HasColumnType("decimal(12,4)");
 
-                    b.Property<DateTime>("fecha_creacion")
-                        .HasColumnType("datetime(6)");
-
                     b.Property<decimal>("interes_aplicado")
                         .HasColumnType("decimal(12,4)");
 
@@ -687,9 +687,6 @@ namespace ApiEjemplo.Migrations
                     b.Property<int?>("periodo_id")
                         .HasColumnType("int");
 
-                    b.Property<int>("prestamo_id")
-                        .HasColumnType("int");
-
                     b.Property<string>("tipo_pago")
                         .HasMaxLength(30)
                         .HasColumnType("varchar(30)");
@@ -699,8 +696,6 @@ namespace ApiEjemplo.Migrations
                     b.HasIndex("pago_id");
 
                     b.HasIndex("periodo_id");
-
-                    b.HasIndex("prestamo_id");
 
                     b.ToTable("pago_detalle");
                 });
@@ -1260,17 +1255,9 @@ namespace ApiEjemplo.Migrations
                         .HasForeignKey("periodo_id")
                         .OnDelete(DeleteBehavior.SetNull);
 
-                    b.HasOne("ApiEjemplo.Models.Prestamo", "Prestamo")
-                        .WithMany()
-                        .HasForeignKey("prestamo_id")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
                     b.Navigation("Pago");
 
                     b.Navigation("Periodo");
-
-                    b.Navigation("Prestamo");
                 });
 
             modelBuilder.Entity("ApiEjemplo.Models.PeriodoAmortizacion", b =>
