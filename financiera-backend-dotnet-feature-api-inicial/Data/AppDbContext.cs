@@ -244,11 +244,13 @@ namespace ApiEjemplo.Data
                 .HasForeignKey(pd => pd.pago_id)
                 .OnDelete(DeleteBehavior.Cascade);
 
+            // Restrict (no Cascade) — evita doble cascada MySQL. Prestamo → Pago → PagoDetalle
+            // ya maneja la eliminación en cadena; esta FK es solo para integridad referencial.
             modelBuilder.Entity<PagoDetalle>()
                 .HasOne(pd => pd.Prestamo)
                 .WithMany()
                 .HasForeignKey(pd => pd.prestamo_id)
-                .OnDelete(DeleteBehavior.Cascade);
+                .OnDelete(DeleteBehavior.Restrict);
 
             modelBuilder.Entity<PagoDetalle>()
                 .HasOne(pd => pd.Periodo)

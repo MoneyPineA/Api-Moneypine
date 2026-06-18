@@ -280,6 +280,7 @@ namespace ApiEjemplo.Controllers
                     mora_aplicada    = det.mora_aplicada,
                     periodo_cerrado  = false, // actualizado en el paso 6
                     tipo_pago        = dto.tipo_pago,
+                    fecha_creacion   = TimeHelper.GetMexicoTime(),
                 });
 
                 periodosAfectados.Add(det.periodo_id.Value);

@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Text.Json.Serialization;
+using ApiEjemplo.Helpers;
 
 namespace ApiEjemplo.Models
 {
@@ -35,6 +36,8 @@ namespace ApiEjemplo.Models
 
         [MaxLength(30)]
         public string? tipo_pago { get; set; }
+
+        public DateTime fecha_creacion { get; set; } = TimeHelper.GetMexicoTime();
 
         [JsonIgnore]
         public Pago Pago { get; set; } = null!;

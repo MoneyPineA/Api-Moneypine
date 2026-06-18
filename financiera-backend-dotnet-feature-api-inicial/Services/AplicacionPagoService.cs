@@ -135,16 +135,10 @@ namespace ApiEjemplo.Services
             if (max > 0 && dto.monto_pagado > max * 1.02m)
                 return Err(res, $"El monto ({dto.monto_pagado:N2}) excede el adeudo ({max:N2}).");
 
-            // Acumulado del mismo día (pagos anteriores del día)
-            var diaInicio = fechaPago.Date;
-            decimal pagoAcumuladoDia = await _context.Pagos
-                .Where(p => p.prestamo_id == dto.prestamo_id
-                         && p.fecha_pago >= diaInicio
-                         && p.fecha_pago < diaInicio.AddDays(1)
-                         && p.estatus == EstatusPago.APLICADO)
-                .SumAsync(p => (decimal?)p.monto_pagado) ?? 0m;
-
-            decimal pagoRestante = dto.monto_pagado + pagoAcumuladoDia;
+            // Los pagos anteriores (incluso del mismo día) ya están descontados en acum
+            // (CargarAcumPorPeriodo incluye todos los pagos APLICADO).
+            // No se suma pagoAcumuladoDia para evitar duplicar la distribución.
+            decimal pagoRestante = dto.monto_pagado;
 
             switch (dto.tipo_pago)
             {
