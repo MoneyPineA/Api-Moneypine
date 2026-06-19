@@ -407,147 +407,101 @@ namespace ApiEjemplo.Controllers
             var prestamo = await _context.Prestamos.FindAsync(pago.prestamo_id);
             if (prestamo == null) return NotFound("Préstamo asociado no encontrado");
 
-            var detalles = await _context.PagoDetalles
-                .Where(pd => pd.pago_id == id)
-                .ToListAsync();
-
             var now = TimeHelper.GetMexicoTime();
 
-            if (detalles.Any())
+            // ── PASO 1: Revertir ahorro_por_pago de mora ──────────────────
+            // Aplica tanto a pagos con detalle como legados
+            decimal moraARevertir = pago.mora_pagada;
+            if (moraARevertir > 0)
             {
-                // ── Camino nuevo: reversión exacta desde pago_detalle ──────
-
-                // IDs de periodos afectados (antes de borrar)
-                var periodosIds = detalles
-                    .Where(d => d.periodo_id.HasValue)
-                    .Select(d => d.periodo_id!.Value)
-                    .Distinct()
-                    .ToList();
-
-                // Revertir ahorro_por_pago (mora que este pago había acumulado)
-                foreach (var det in detalles.Where(d => d.mora_aplicada > 0 && d.periodo_id.HasValue))
+                // Primero en congelados (estado_pago=5), luego en pendientes (estado_pago=1)
+                var congelados = await _context.PeriodosAmortizacion
+                    .Where(pa => pa.prestamo_id == pago.prestamo_id
+                              && pa.estado_pago == 5 && pa.ahorro_por_pago > 0)
+                    .OrderBy(pa => pa.periodo).ToListAsync();
+                foreach (var p in congelados)
                 {
-                    var pa = await _context.PeriodosAmortizacion.FindAsync(det.periodo_id!.Value);
-                    if (pa != null)
-                    {
-                        pa.ahorro_por_pago = Math.Max(0m, pa.ahorro_por_pago - det.mora_aplicada);
-                        _context.PeriodosAmortizacion.Update(pa);
-                    }
+                    if (moraARevertir <= 0) break;
+                    decimal red = Math.Min(p.ahorro_por_pago, moraARevertir);
+                    p.ahorro_por_pago = Math.Max(0m, p.ahorro_por_pago - red);
+                    moraARevertir -= red;
+                    _context.PeriodosAmortizacion.Update(p);
                 }
-                await _context.SaveChangesAsync(); // guarda ahorro_por_pago actualizado
-
-                // Eliminar pago (cascade elimina sus pago_detalle)
-                _context.Pagos.Remove(pago);
-                await _context.SaveChangesAsync();
-
-                // Recalcular estado de cada periodo (ahora sin el pago_detalle borrado)
-                foreach (var periodoId in periodosIds)
+                if (moraARevertir > 0)
                 {
-                    var pa = await _context.PeriodosAmortizacion.FindAsync(periodoId);
-                    if (pa == null) continue;
-                    await _motorPago.RecalcularEstadoPeriodo(pa, prestamo, now);
-                    _context.PeriodosAmortizacion.Update(pa);
-                }
-
-                // Recalcular saldo, estatus y fecha_proximo_pago
-                prestamo.saldo_actual = await _motorPago.RecalcularSaldo(pago.prestamo_id, prestamo.monto);
-                prestamo.estatus = await _motorPago.RecalcularEstatus(pago.prestamo_id, prestamo.saldo_actual, now);
-
-                if (prestamo.estatus != EstatusPrestamo.LIQUIDADO)
-                    prestamo.fecha_fin = null;
-
-                var siguientePend = await _context.PeriodosAmortizacion
-                    .Where(pa => pa.prestamo_id == pago.prestamo_id && pa.estado_pago == 1)
-                    .OrderBy(pa => pa.periodo)
-                    .Select(pa => pa.fecha_vencimiento)
-                    .FirstOrDefaultAsync();
-
-                if (siguientePend != default)
-                    prestamo.fecha_proximo_pago = siguientePend;
-
-                _context.Prestamos.Update(prestamo);
-                await _context.SaveChangesAsync();
-            }
-            else
-            {
-                // ── Camino legado: búsqueda por fecha_pagado ──────────────
-
-                if (pago.abono_capital == 0 && pago.mora_pagada > 0)
-                {
-                    // solo_mora legado: descontar ahorro_por_pago
-                    decimal moraADescontar = pago.mora_pagada;
-                    var congelados = await _context.PeriodosAmortizacion
+                    var pendMora = await _context.PeriodosAmortizacion
                         .Where(pa => pa.prestamo_id == pago.prestamo_id
-                                  && pa.estado_pago == 5
-                                  && pa.ahorro_por_pago > 0)
+                                  && pa.estado_pago == 1 && pa.ahorro_por_pago > 0)
                         .OrderBy(pa => pa.periodo).ToListAsync();
-                    foreach (var p in congelados)
+                    foreach (var p in pendMora)
                     {
-                        if (moraADescontar <= 0) break;
-                        decimal red = Math.Min(p.ahorro_por_pago, moraADescontar);
-                        p.ahorro_por_pago -= red; moraADescontar -= red;
-                        _context.PeriodosAmortizacion.Update(p);
-                    }
-                    if (moraADescontar > 0)
-                    {
-                        var retraso = await _context.PeriodosAmortizacion
-                            .Where(pa => pa.prestamo_id == pago.prestamo_id
-                                      && pa.estado_pago == 1
-                                      && pa.ahorro_por_pago > 0)
-                            .OrderBy(pa => pa.periodo).ToListAsync();
-                        foreach (var p in retraso)
-                        {
-                            if (moraADescontar <= 0) break;
-                            decimal red = Math.Min(p.ahorro_por_pago, moraADescontar);
-                            p.ahorro_por_pago -= red; moraADescontar -= red;
-                            _context.PeriodosAmortizacion.Update(p);
-                        }
-                    }
-                }
-                else
-                {
-                    // parcialidad / parcialidad_mora legado: reabrir periodos por fecha_pagado
-                    var periodosARevertir = await _context.PeriodosAmortizacion
-                        .Where(pa => pa.prestamo_id == pago.prestamo_id
-                                  && (pa.estado_pago == 2 || pa.estado_pago == 3 || pa.estado_pago == 5)
-                                  && pa.fecha_pagado.HasValue
-                                  && pa.fecha_pagado.Value.Date == pago.fecha_pago.Date)
-                        .OrderBy(pa => pa.periodo).ToListAsync();
-
-                    foreach (var p in periodosARevertir)
-                    {
-                        p.estado_pago  = 1;
-                        p.fecha_pagado = null;
-                        int dias = Math.Max(0, (int)(now.Date - p.fecha_vencimiento.Date).TotalDays);
-                        p.dias_moratorio    = dias;
-                        p.interes_moratorio = dias > 0 && prestamo.mora_diaria > 0
-                            ? Math.Round(prestamo.mora_diaria * dias, 2) : 0m;
+                        if (moraARevertir <= 0) break;
+                        decimal red = Math.Min(p.ahorro_por_pago, moraARevertir);
+                        p.ahorro_por_pago = Math.Max(0m, p.ahorro_por_pago - red);
+                        moraARevertir -= red;
                         _context.PeriodosAmortizacion.Update(p);
                     }
                 }
-
-                _context.Pagos.Remove(pago);
-                await _context.SaveChangesAsync(); // pago eliminado
-
-                // Recalcular saldo y estatus con la nueva fórmula (legado también se beneficia)
-                prestamo.saldo_actual = await _motorPago.RecalcularSaldo(pago.prestamo_id, prestamo.monto);
-                prestamo.estatus = await _motorPago.RecalcularEstatus(pago.prestamo_id, prestamo.saldo_actual, now);
-
-                if (prestamo.estatus != EstatusPrestamo.LIQUIDADO)
-                    prestamo.fecha_fin = null;
-
-                var siguientePendLeg = await _context.PeriodosAmortizacion
-                    .Where(pa => pa.prestamo_id == pago.prestamo_id && pa.estado_pago == 1)
-                    .OrderBy(pa => pa.periodo)
-                    .Select(pa => pa.fecha_vencimiento)
-                    .FirstOrDefaultAsync();
-
-                if (siguientePendLeg != default)
-                    prestamo.fecha_proximo_pago = siguientePendLeg;
-
-                _context.Prestamos.Update(prestamo);
                 await _context.SaveChangesAsync();
             }
+
+            // ── PASO 2: Eliminar el pago (cascade borra pago_detalle) ─────
+            _context.Pagos.Remove(pago);
+            await _context.SaveChangesAsync();
+
+            // ── PASO 3: CASCADE UNCOVER ───────────────────────────────────
+            // Si el pago tenía capital, descubrir períodos desde el más reciente
+            // hacia atrás hasta recuperar ese capital (modelo en cascada).
+            // Si solo era mora/interés (abono_capital=0), el paso 1 ya lo manejó.
+            if (pago.abono_capital > 0.01m)
+            {
+                decimal capARecuperar = pago.abono_capital;
+
+                // Períodos cubiertos (pagados o congelados), del más reciente al más antiguo
+                var cubiertos = await _context.PeriodosAmortizacion
+                    .Where(pa => pa.prestamo_id == pago.prestamo_id
+                              && (pa.estado_pago == 2 || pa.estado_pago == 3 || pa.estado_pago == 5))
+                    .OrderByDescending(pa => pa.periodo)
+                    .ToListAsync();
+
+                foreach (var p in cubiertos)
+                {
+                    if (capARecuperar <= 0.01m) break;
+
+                    // Descubrir el período: vuelve a pendiente/atrasado
+                    p.estado_pago  = 1;
+                    p.fecha_pagado = null;
+                    int dias = Math.Max(0, (int)(now.Date - p.fecha_vencimiento.Date).TotalDays);
+                    p.dias_moratorio    = dias;
+                    p.interes_moratorio = dias > 0 && prestamo.mora_diaria > 0
+                        ? Math.Round(prestamo.mora_diaria * dias, 2) : 0m;
+                    _context.PeriodosAmortizacion.Update(p);
+
+                    // Solo descontar del contador si el período tiene capital real
+                    if (p.abono_capital > 0.01m)
+                        capARecuperar -= p.abono_capital;
+                }
+                await _context.SaveChangesAsync();
+            }
+
+            // ── PASO 4: Recalcular saldo, estatus y fecha_proximo_pago ────
+            prestamo.saldo_actual = await _motorPago.RecalcularSaldo(pago.prestamo_id, prestamo.monto);
+            prestamo.estatus = await _motorPago.RecalcularEstatus(pago.prestamo_id, prestamo.saldo_actual, now);
+
+            if (prestamo.estatus != EstatusPrestamo.LIQUIDADO)
+                prestamo.fecha_fin = null;
+
+            var siguientePend = await _context.PeriodosAmortizacion
+                .Where(pa => pa.prestamo_id == pago.prestamo_id && pa.estado_pago == 1)
+                .OrderBy(pa => pa.periodo)
+                .Select(pa => pa.fecha_vencimiento)
+                .FirstOrDefaultAsync();
+
+            if (siguientePend != default)
+                prestamo.fecha_proximo_pago = siguientePend;
+
+            _context.Prestamos.Update(prestamo);
+            await _context.SaveChangesAsync();
 
             await transaction.CommitAsync();
             return NoContent();

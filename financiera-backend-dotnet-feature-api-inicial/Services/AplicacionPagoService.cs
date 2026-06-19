@@ -487,15 +487,21 @@ namespace ApiEjemplo.Services
             decimal intAcum = acum?.int_ ?? 0;
             decimal ivaAcum = acum?.iva  ?? 0;
 
-            bool capOk = capAcum >= pa.abono_capital  - 0.01m;
-            bool intOk = intAcum >= pa.interes_normal - 0.01m;
-            bool ivaOk = ivaAcum >= pa.interes_iva    - 0.01m;
+            // Período vacío (sin capital, interés ni IVA): no marcar como PAGADO
+            // automáticamente aunque acum=0 cumpla la condición 0 >= -0.01.
+            bool periodoVacio = pa.abono_capital  <= 0.01m
+                             && pa.interes_normal <= 0.01m
+                             && pa.interes_iva    <= 0.01m;
+
+            bool capOk = !periodoVacio && capAcum >= pa.abono_capital  - 0.01m;
+            bool intOk = !periodoVacio && intAcum >= pa.interes_normal - 0.01m;
+            bool ivaOk = !periodoVacio && ivaAcum >= pa.interes_iva    - 0.01m;
 
             int dias = Math.Max(0, (int)(referencia.Date - pa.fecha_vencimiento.Date).TotalDays);
             decimal moraBruta = dias > 0 && prestamo.mora_diaria > 0
                 ? Math.Round(prestamo.mora_diaria * dias, 2) : 0m;
 
-            if (!capOk || !intOk || !ivaOk)
+            if (periodoVacio || !capOk || !intOk || !ivaOk)
             {
                 // Periodo no cubierto — mantener pendiente
                 pa.estado_pago      = 1;
