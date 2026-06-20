@@ -468,6 +468,10 @@ namespace ApiEjemplo.Controllers
                 {
                     if (capARecuperar <= 0.01m) break;
 
+                    // Saltar períodos sin capital asignado: no forman parte
+                    // de la cascada de capital y no deben ser descubiertos por ella.
+                    if (p.abono_capital <= 0.01m) continue;
+
                     // Descubrir el período: vuelve a pendiente/atrasado
                     p.estado_pago  = 1;
                     p.fecha_pagado = null;
@@ -477,9 +481,7 @@ namespace ApiEjemplo.Controllers
                         ? Math.Round(prestamo.mora_diaria * dias, 2) : 0m;
                     _context.PeriodosAmortizacion.Update(p);
 
-                    // Solo descontar del contador si el período tiene capital real
-                    if (p.abono_capital > 0.01m)
-                        capARecuperar -= p.abono_capital;
+                    capARecuperar -= p.abono_capital;
                 }
                 await _context.SaveChangesAsync();
             }
@@ -505,6 +507,113 @@ namespace ApiEjemplo.Controllers
 
             await transaction.CommitAsync();
             return NoContent();
+        }
+
+        // =====================================================
+        // POST: api/Pago/recalibrar/{prestamoId}
+        // Recalibra el estado_pago de todos los períodos de un
+        // préstamo usando el modelo en cascada: capital pagado
+        // acumulado cubre períodos de más antiguo a más nuevo.
+        // Solo ADMIN.
+        // =====================================================
+        [Authorize(Roles = "ADMIN")]
+        [HttpPost("recalibrar/{prestamoId}")]
+        public async Task<IActionResult> Recalibrar(int prestamoId)
+        {
+            var prestamo = await _context.Prestamos.FindAsync(prestamoId);
+            if (prestamo == null) return NotFound("Préstamo no encontrado");
+
+            using var transaction = await _context.Database.BeginTransactionAsync();
+            var now = TimeHelper.GetMexicoTime();
+
+            // Capital total pagado (suma desde pago_detalle de pagos APLICADOS)
+            var pagosConDetalle = await _context.PagoDetalles
+                .Where(pd => pd.prestamo_id == prestamoId)
+                .Select(pd => pd.pago_id)
+                .Distinct()
+                .ToListAsync();
+
+            decimal capTotalPagado = await _context.PagoDetalles
+                .Where(pd => pd.prestamo_id == prestamoId && pd.periodo_id != null)
+                .Join(_context.Pagos.Where(p => p.estatus == EstatusPago.APLICADO),
+                      pd => pd.pago_id, p => p.pago_id, (pd, _) => pd)
+                .SumAsync(pd => (decimal?)pd.capital_aplicado) ?? 0m;
+
+            // Capital de pagos legados sin detalle
+            decimal capLegado = await _context.Pagos
+                .Where(p => p.prestamo_id == prestamoId
+                         && p.estatus == EstatusPago.APLICADO
+                         && !pagosConDetalle.Contains(p.pago_id))
+                .SumAsync(p => (decimal?)p.abono_capital) ?? 0m;
+
+            decimal capitalDisponible = capTotalPagado + capLegado;
+
+            // Todos los períodos del préstamo ordenados de más antiguo a más nuevo
+            var periodos = await _context.PeriodosAmortizacion
+                .Where(pa => pa.prestamo_id == prestamoId)
+                .OrderBy(pa => pa.periodo)
+                .ToListAsync();
+
+            // Aplicar cascada: cubrir períodos de más antiguo a más nuevo
+            // hasta agotar el capital disponible
+            foreach (var p in periodos)
+            {
+                if (p.abono_capital <= 0.01m)
+                {
+                    // Período sin capital: mantener estado actual sin alterarlo
+                    continue;
+                }
+
+                if (capitalDisponible >= p.abono_capital - 0.01m)
+                {
+                    // Período cubierto — marcar como PAGADO o CONGELADO según mora
+                    capitalDisponible -= p.abono_capital;
+                    if (p.estado_pago != 3 && p.estado_pago != 5)
+                    {
+                        p.estado_pago  = 3; // PAGADO
+                        p.fecha_pagado ??= p.fecha_vencimiento;
+                    }
+                }
+                else
+                {
+                    // Período no cubierto — reabrir
+                    p.estado_pago  = 1;
+                    p.fecha_pagado = null;
+                    int dias = Math.Max(0, (int)(now.Date - p.fecha_vencimiento.Date).TotalDays);
+                    p.dias_moratorio    = dias;
+                    p.interes_moratorio = dias > 0 && prestamo.mora_diaria > 0
+                        ? Math.Round(prestamo.mora_diaria * dias, 2) : 0m;
+                }
+                _context.PeriodosAmortizacion.Update(p);
+            }
+            await _context.SaveChangesAsync();
+
+            // Recalcular saldo, estatus y fecha_proximo_pago del préstamo
+            prestamo.saldo_actual = await _motorPago.RecalcularSaldo(prestamoId, prestamo.monto);
+            prestamo.estatus = await _motorPago.RecalcularEstatus(prestamoId, prestamo.saldo_actual, now);
+
+            if (prestamo.estatus != EstatusPrestamo.LIQUIDADO)
+                prestamo.fecha_fin = null;
+
+            var siguientePend = await _context.PeriodosAmortizacion
+                .Where(pa => pa.prestamo_id == prestamoId && pa.estado_pago == 1)
+                .OrderBy(pa => pa.periodo)
+                .Select(pa => pa.fecha_vencimiento)
+                .FirstOrDefaultAsync();
+
+            if (siguientePend != default)
+                prestamo.fecha_proximo_pago = siguientePend;
+
+            _context.Prestamos.Update(prestamo);
+            await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
+
+            return Ok(new
+            {
+                message  = $"Préstamo #{prestamoId} recalibrado correctamente.",
+                periodosCubiertos = periodos.Count(p => p.estado_pago == 3 || p.estado_pago == 5),
+                saldoActual = prestamo.saldo_actual,
+            });
         }
     }
 }
