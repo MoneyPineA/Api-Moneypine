@@ -56,33 +56,6 @@ namespace ApiEjemplo.Migrations
                     b.ToTable("ActivityLogs");
                 });
 
-            modelBuilder.Entity("ApiEjemplo.Models.BuroAutoReporte", b =>
-                {
-                    b.Property<int>("cliente_id")
-                        .HasColumnType("int");
-
-                    b.Property<int>("prestamo_id")
-                        .HasColumnType("int");
-
-                    b.Property<int>("dias_mora")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime>("fecha_reporte")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("motivo")
-                        .IsRequired()
-                        .HasMaxLength(300)
-                        .HasColumnType("varchar(300)");
-
-                    b.Property<decimal>("saldo_pendiente")
-                        .HasColumnType("decimal(12,2)");
-
-                    b.HasKey("cliente_id", "prestamo_id");
-
-                    b.ToTable("buro_auto_reporte");
-                });
-
             modelBuilder.Entity("ApiEjemplo.Models.BuroExclusion", b =>
                 {
                     b.Property<int>("cliente_id")
@@ -120,15 +93,6 @@ namespace ApiEjemplo.Migrations
                     MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("cliente_id"));
 
                     b.Property<string>("apellido_materno")
-                        .HasColumnType("longtext");
-
-                    b.Property<string>("apellido_paterno")
-                        .HasColumnType("longtext");
-
-                    b.Property<string>("calle")
-                        .HasColumnType("longtext");
-
-                    b.Property<string>("ciudad")
                         .HasColumnType("longtext");
 
                     b.Property<string>("clave_cliente")
@@ -456,9 +420,8 @@ namespace ApiEjemplo.Migrations
                     b.Property<DateTime>("fecha_creacion")
                         .HasColumnType("datetime(6)");
 
-                    b.Property<string>("forma_pago")
-                        .IsRequired()
-                        .HasColumnType("longtext");
+                    b.Property<int>("forma_pago")
+                        .HasColumnType("int");
 
                     b.Property<decimal>("monto")
                         .HasColumnType("decimal(12,2)");
@@ -623,9 +586,6 @@ namespace ApiEjemplo.Migrations
                     b.Property<DateTime>("fecha_pago")
                         .HasColumnType("datetime(6)");
 
-                    b.Property<decimal>("interes_iva")
-                        .HasColumnType("decimal(10,2)");
-
                     b.Property<decimal>("interes_pagado")
                         .HasColumnType("decimal(10,2)");
 
@@ -644,65 +604,11 @@ namespace ApiEjemplo.Migrations
                     b.Property<decimal>("saldo_restante")
                         .HasColumnType("decimal(12,2)");
 
-                    b.Property<string>("tipo_pago")
-                        .HasMaxLength(30)
-                        .HasColumnType("varchar(30)");
-
                     b.HasKey("pago_id");
 
                     b.HasIndex("prestamo_id");
 
                     b.ToTable("pago");
-                });
-
-            modelBuilder.Entity("ApiEjemplo.Models.PagoDetalle", b =>
-                {
-                    b.Property<int>("pago_detalle_id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("pago_detalle_id"));
-
-                    b.Property<decimal>("capital_aplicado")
-                        .HasColumnType("decimal(12,4)");
-
-                    b.Property<DateTime>("fecha_creacion")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<decimal>("interes_aplicado")
-                        .HasColumnType("decimal(12,4)");
-
-                    b.Property<decimal>("iva_aplicado")
-                        .HasColumnType("decimal(12,4)");
-
-                    b.Property<decimal>("mora_aplicada")
-                        .HasColumnType("decimal(12,4)");
-
-                    b.Property<int>("pago_id")
-                        .HasColumnType("int");
-
-                    b.Property<bool>("periodo_cerrado")
-                        .HasColumnType("tinyint(1)");
-
-                    b.Property<int?>("periodo_id")
-                        .HasColumnType("int");
-
-                    b.Property<int>("prestamo_id")
-                        .HasColumnType("int");
-
-                    b.Property<string>("tipo_pago")
-                        .HasMaxLength(30)
-                        .HasColumnType("varchar(30)");
-
-                    b.HasKey("pago_detalle_id");
-
-                    b.HasIndex("pago_id");
-
-                    b.HasIndex("periodo_id");
-
-                    b.HasIndex("prestamo_id");
-
-                    b.ToTable("pago_detalle");
                 });
 
             modelBuilder.Entity("ApiEjemplo.Models.PeriodoAmortizacion", b =>
@@ -776,10 +682,6 @@ namespace ApiEjemplo.Migrations
 
                     MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("prestamo_id"));
 
-                    b.Property<string>("administrado_en")
-                        .HasMaxLength(10)
-                        .HasColumnType("varchar(10)");
-
                     b.Property<int>("cliente_id")
                         .HasColumnType("int");
 
@@ -814,9 +716,8 @@ namespace ApiEjemplo.Migrations
                     b.Property<DateTime?>("fecha_proximo_pago")
                         .HasColumnType("datetime(6)");
 
-                    b.Property<string>("forma_pago")
-                        .IsRequired()
-                        .HasColumnType("longtext");
+                    b.Property<int>("forma_pago")
+                        .HasColumnType("int");
 
                     b.Property<decimal?>("g_alimento")
                         .HasColumnType("decimal(12,2)");
@@ -1243,32 +1144,6 @@ namespace ApiEjemplo.Migrations
                         .HasForeignKey("prestamo_id")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
-
-                    b.Navigation("Prestamo");
-                });
-
-            modelBuilder.Entity("ApiEjemplo.Models.PagoDetalle", b =>
-                {
-                    b.HasOne("ApiEjemplo.Models.Pago", "Pago")
-                        .WithMany()
-                        .HasForeignKey("pago_id")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("ApiEjemplo.Models.PeriodoAmortizacion", "Periodo")
-                        .WithMany()
-                        .HasForeignKey("periodo_id")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("ApiEjemplo.Models.Prestamo", "Prestamo")
-                        .WithMany()
-                        .HasForeignKey("prestamo_id")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Pago");
-
-                    b.Navigation("Periodo");
 
                     b.Navigation("Prestamo");
                 });
