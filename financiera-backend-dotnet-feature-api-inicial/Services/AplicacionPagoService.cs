@@ -347,6 +347,8 @@ namespace ApiEjemplo.Services
         {
             foreach (var p in pendientes)
             {
+                if (pagoRestante <= 0.005m) break; // pago agotado: salir sin error
+
                 var a = acum.GetValueOrDefault(p.periodo_id, new AcumPd(0, 0, 0));
 
                 // Pendiente real (restando lo ya pagado en pago_detalle)
