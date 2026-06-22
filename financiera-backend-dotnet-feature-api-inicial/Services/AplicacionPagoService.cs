@@ -26,7 +26,7 @@ namespace ApiEjemplo.Services
         };
 
         public static bool TipoPagoValido(string? tipo) =>
-            tipo != null && TiposValidos.Contains(tipo);
+            tipo == null || TiposValidos.Contains(tipo); // null se trata como "parcialidad"
 
         // ── DTOs de resultado (usados por controller y preview) ───────────
 
@@ -93,6 +93,9 @@ namespace ApiEjemplo.Services
         public async Task<ResultadoDistribucion> CalcularDistribucion(PagoCreateDTO dto)
         {
             var res = new ResultadoDistribucion { tipo_pago = dto.tipo_pago };
+
+            // null tipo_pago se interpreta como "parcialidad"
+            if (dto.tipo_pago == null) dto.tipo_pago = "parcialidad";
 
             if (!TipoPagoValido(dto.tipo_pago))
                 return Err(res, $"tipo_pago '{dto.tipo_pago}' no reconocido. " +
@@ -404,10 +407,11 @@ namespace ApiEjemplo.Services
                 else if (tipoPago == "parcialidad" && pagoRestante > 0.01m)
                 {
                     // Pago parcial del primer periodo incompleto (solo para parcialidad)
+                    // Orden: Capital → Interés → IVA
                     decimal sob  = pagoRestante;
+                    decimal capA = Math.Min(sob, capPend); sob -= capA;
                     decimal intA = Math.Min(sob, intPend); sob -= intA;
-                    decimal ivaA = Math.Min(sob, ivaPend); sob -= ivaA;
-                    decimal capA = Math.Min(sob, capPend);
+                    decimal ivaA = Math.Min(sob, ivaPend);
 
                     // ¿El parcial completa la cobertura al combinar con acum previo?
                     decimal capTotal = a.Cap + capA;
