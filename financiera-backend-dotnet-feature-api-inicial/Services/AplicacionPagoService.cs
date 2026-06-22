@@ -441,6 +441,46 @@ namespace ApiEjemplo.Services
                     });
                     break;
                 }
+                else if (tipoPago != "parcialidad"
+                      && pagoRestante >= capPend + intPend + ivaPend - 0.05m
+                      && capPend + intPend + ivaPend > 0.01m)
+                {
+                    // Cubre cap+int+iva pero no la mora completa → período queda Congelado
+                    decimal sob = pagoRestante;
+                    decimal cA  = Math.Min(sob, capPend); sob -= cA;
+                    decimal iA  = Math.Min(sob, intPend); sob -= iA;
+                    decimal vA  = Math.Min(sob, ivaPend); sob -= vA;
+                    decimal mA  = Math.Min(sob, moraPend); // mora residual si queda saldo
+                    pagoRestante -= (cA + iA + vA + mA);
+
+                    decimal capTotal = a.Cap + cA;
+                    decimal intTotal = a.Int + iA;
+                    decimal ivaTotal = a.Iva + vA;
+                    bool cerrado = capTotal >= p.abono_capital  - 0.01m
+                                && intTotal >= p.interes_normal - 0.01m
+                                && ivaTotal >= p.interes_iva    - 0.01m;
+                    bool moraCubierta = (p.ahorro_por_pago + mA) >= moraBruta - 0.01m;
+                    int nuevoEstado = cerrado
+                        ? (moraBruta <= 0.01m || moraCubierta ? 3 : 5)
+                        : 1;
+
+                    res.capital_total += cA; res.interes_total += iA;
+                    res.iva_total     += vA; res.mora_total    += mA;
+                    res.detalles.Add(new DetallePerPeriodo
+                    {
+                        periodo_id        = p.periodo_id,
+                        periodo_num       = p.periodo,
+                        capital_aplicado  = cA,
+                        interes_aplicado  = iA,
+                        iva_aplicado      = vA,
+                        mora_aplicada     = mA,
+                        periodo_cerrado   = cerrado,
+                        nuevo_estado      = nuevoEstado,
+                        dias_moratorio    = d,
+                        interes_moratorio = moraBruta,
+                    });
+                    // pago_total continúa a la siguiente parcialidad si queda saldo
+                }
                 else if (tipoPago != "parcialidad" && moraPend > 0.01m && pagoRestante <= moraPend + 0.05m)
                 {
                     // Solo cubre mora del primer periodo — acumular sin cerrar
@@ -457,8 +497,8 @@ namespace ApiEjemplo.Services
                 }
                 else
                 {
-                    return $"El monto ({montoOriginal:N2}) no alcanza para cerrar el período " +
-                           $"(${costo:N2}). Para pagar solo mora use tipo_pago=solo_mora.";
+                    return $"El monto ({montoOriginal:N2}) no alcanza para cubrir el período " +
+                           $"(${costo:N2}). Use tipo_pago=parcialidad para pagar sin mora.";
                 }
             }
             return null;
