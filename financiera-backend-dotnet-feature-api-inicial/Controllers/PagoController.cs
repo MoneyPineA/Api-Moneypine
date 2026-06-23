@@ -57,7 +57,10 @@ namespace ApiEjemplo.Controllers
             if (cobrador_id.HasValue)
                 query = query.Where(p => p.cobrador_id == cobrador_id.Value);
 
-            var pagos = await query.OrderByDescending(p => p.fecha_pago).ToListAsync();
+            var pagos = await query
+                .OrderByDescending(p => p.fecha_pago)
+                .ThenByDescending(p => p.pago_id)
+                .ToListAsync();
 
             var cobradorIds = pagos.Where(p => p.cobrador_id.HasValue)
                 .Select(p => p.cobrador_id!.Value).Distinct().ToList();
@@ -104,10 +107,16 @@ namespace ApiEjemplo.Controllers
             if (prestamo_id.HasValue)
                 query = query.Where(p => p.prestamo_id == prestamo_id.Value);
 
-            var pagos = await query.OrderByDescending(p => p.fecha_pago).ToListAsync();
+            var pagos = await query
+                .OrderByDescending(p => p.fecha_pago)
+                .ThenByDescending(p => p.pago_id)
+                .ToListAsync();
 
-            var cobradorIds = pagos.Where(p => p.cobrador_id.HasValue)
-                .Select(p => p.cobrador_id!.Value).Distinct().ToList();
+            var cobradorIds = pagos
+                .Where(p => p.cobrador_id.HasValue)
+                .Select(p => p.cobrador_id!.Value)
+                .Distinct()
+                .ToList();
             var cobradores = await _context.Usuarios
                 .Where(u => cobradorIds.Contains(u.usuario_id))
                 .ToDictionaryAsync(u => u.usuario_id, u => $"{u.nombre} {u.apellido}".Trim());
