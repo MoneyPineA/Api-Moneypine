@@ -497,6 +497,45 @@ namespace ApiEjemplo.Services
                     pagoRestante = 0m;
                     break;
                 }
+                else if (tipoPago != "parcialidad" && pagoRestante > 0.01m)
+                {
+                    // Saldo restante no alcanza para cubrir el periodo completo ni solo cap+int+iva:
+                    // aplicar parcialmente cap → int → iva → mora (igual que parcialidad)
+                    decimal sob  = pagoRestante;
+                    decimal cA2  = Math.Min(sob, capPend); sob -= cA2;
+                    decimal iA2  = Math.Min(sob, intPend); sob -= iA2;
+                    decimal vA2  = Math.Min(sob, ivaPend); sob -= vA2;
+                    decimal mA2  = Math.Min(sob, moraPend);
+
+                    decimal capTotal2 = a.Cap + cA2;
+                    decimal intTotal2 = a.Int + iA2;
+                    decimal ivaTotal2 = a.Iva + vA2;
+                    bool cerrado2 = capTotal2 >= p.abono_capital  - 0.01m
+                                 && intTotal2 >= p.interes_normal - 0.01m
+                                 && ivaTotal2 >= p.interes_iva    - 0.01m;
+                    bool moraCub2 = (p.ahorro_por_pago + mA2) >= moraBruta - 0.01m;
+                    int estado2 = cerrado2
+                        ? (moraBruta <= 0.01m || moraCub2 ? 3 : 5) : 1;
+
+                    res.capital_total += cA2; res.interes_total += iA2;
+                    res.iva_total     += vA2; res.mora_total    += mA2;
+                    pagoRestante       = 0m;
+
+                    res.detalles.Add(new DetallePerPeriodo
+                    {
+                        periodo_id        = p.periodo_id,
+                        periodo_num       = p.periodo,
+                        capital_aplicado  = cA2,
+                        interes_aplicado  = iA2,
+                        iva_aplicado      = vA2,
+                        mora_aplicada     = mA2,
+                        periodo_cerrado   = cerrado2,
+                        nuevo_estado      = estado2,
+                        dias_moratorio    = d,
+                        interes_moratorio = moraBruta,
+                    });
+                    break;
+                }
                 else
                 {
                     return $"El monto ({montoOriginal:N2}) no alcanza para cubrir el período " +
