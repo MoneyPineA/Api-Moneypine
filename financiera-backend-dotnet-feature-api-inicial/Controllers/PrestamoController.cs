@@ -155,31 +155,19 @@ namespace ApiEjemplo.Controllers
                 .ToListAsync();
             _context.PeriodosAmortizacion.RemoveRange(periodosExistentes);
 
-            decimal mesesPlazoApro    = prestamo.forma_pago switch {
-                FormasPago.DIARIA      => prestamo.plazo_meses / 30m,
-                FormasPago.SEMANAL     => prestamo.plazo_meses / 4m,
-                FormasPago.QUINCENAL   => prestamo.plazo_meses / 2m,
-                FormasPago.CATORCENAL  => prestamo.plazo_meses * (14m / 30m),
-                _                      => prestamo.plazo_meses,
+            decimal freqDivApro = prestamo.forma_pago switch {
+                FormasPago.SEMANAL    => 4m,
+                FormasPago.QUINCENAL  => 2m,
+                FormasPago.CATORCENAL => 2m,
+                _                     => 1m,
             };
-            decimal interesTotalApro   = prestamo.monto * (prestamo.tasa_interes / 100m) * mesesPlazoApro;
-            decimal ivaRateApro        = (prestamo.iva.HasValue && prestamo.iva > 0) ? prestamo.iva.Value / 100m : 0m;
-            decimal ivaTotalApro       = interesTotalApro * ivaRateApro;
-            decimal capitalPorPagoApro = Math.Round(prestamo.monto / prestamo.plazo_meses, 2);
-            decimal interesPorPagoApro = Math.Round(interesTotalApro / prestamo.plazo_meses, 2);
-            decimal ivaPorPagoApro     = Math.Round(ivaTotalApro / prestamo.plazo_meses, 2);
-            decimal _pagoBrutoApro     = capitalPorPagoApro + interesPorPagoApro + ivaPorPagoApro;
-            decimal pagoRegularApro    = _pagoBrutoApro % 1 > 0.001m ? Math.Ceiling(_pagoBrutoApro) : _pagoBrutoApro;
-
-            prestamo.pago_mes    = pagoRegularApro;
-            prestamo.monto_total = prestamo.monto + interesTotalApro + ivaTotalApro;
-            prestamo.mora_diaria = Math.Round(pagoRegularApro * (prestamo.tasa_interes * 12m * 2m / 100m) / 360m, 2);
+            decimal interesPerPeriodoApro = prestamo.monto * prestamo.tasa_interes / (freqDivApro * 100m);
+            decimal ivaPerPeriodoApro     = interesPerPeriodoApro * 0.16m;
+            decimal abonoCapitalApro      = Math.Round(prestamo.monto / prestamo.plazo_meses, 2);
 
             var periodosList = new List<PeriodoAmortizacion>();
             for (int i = 1; i <= prestamo.plazo_meses; i++)
             {
-                bool esUltimo = i == prestamo.plazo_meses;
-
                 DateTime fechaVencP = esMonthlyApro
                     ? fechaBase.AddMonths(i - 1)
                     : fechaBase.AddDays((double)(i - 1) * freqDaysApro);
@@ -187,22 +175,10 @@ namespace ApiEjemplo.Controllers
                     ? fechaBase.AddMonths(i - 2)
                     : fechaBase.AddDays((double)(i - 2) * freqDaysApro);
 
-                decimal capEste = esUltimo
-                    ? Math.Round(prestamo.monto - capitalPorPagoApro * (prestamo.plazo_meses - 1), 2)
-                    : capitalPorPagoApro;
-                decimal intEste = esUltimo
-                    ? Math.Round(interesTotalApro - interesPorPagoApro * (prestamo.plazo_meses - 1), 2)
-                    : interesPorPagoApro;
-                decimal ivaEste = esUltimo
-                    ? Math.Round(ivaTotalApro - ivaPorPagoApro * (prestamo.plazo_meses - 1), 2)
-                    : ivaPorPagoApro;
-                decimal pagoEste = capEste + intEste + ivaEste;
-                if (pagoEste % 1 > 0.001m) pagoEste = Math.Ceiling(pagoEste);
-
-                decimal capitalPendiente = prestamo.monto - capitalPorPagoApro * (i - 1);
-                decimal saldoFinal       = esUltimo
+                decimal capitalPendiente = prestamo.monto - abonoCapitalApro * (i - 1);
+                decimal saldoFinal       = i == prestamo.plazo_meses
                     ? 0m
-                    : Math.Max(0m, prestamo.monto - capitalPorPagoApro * i);
+                    : Math.Max(0m, prestamo.monto - abonoCapitalApro * i);
 
                 periodosList.Add(new PeriodoAmortizacion
                 {
@@ -211,10 +187,10 @@ namespace ApiEjemplo.Controllers
                     fecha_inicio      = fechaInicioP,
                     fecha_vencimiento = fechaVencP,
                     capital_pendiente = capitalPendiente,
-                    abono_capital     = capEste,
-                    interes_normal    = intEste,
-                    interes_iva       = ivaEste,
-                    pago_pactado      = pagoEste,
+                    abono_capital     = abonoCapitalApro,
+                    interes_normal    = interesPerPeriodoApro,
+                    interes_iva       = ivaPerPeriodoApro,
+                    pago_pactado      = prestamo.pago_mes,
                     saldo_final       = saldoFinal,
                     estado_pago       = 1,
                 });
@@ -457,22 +433,16 @@ namespace ApiEjemplo.Controllers
             // CÁLCULOS FINANCIEROS
             // ================================
 
-            decimal mesesPlazo     = dto.forma_pago switch {
-                FormasPago.DIARIA      => dto.plazo_meses / 30m,
-                FormasPago.SEMANAL     => dto.plazo_meses / 4m,
-                FormasPago.QUINCENAL   => dto.plazo_meses / 2m,
-                FormasPago.CATORCENAL  => dto.plazo_meses * (14m / 30m),
-                _                      => dto.plazo_meses,
+            decimal freqDiv = dto.forma_pago switch {
+                FormasPago.SEMANAL    => 4m,
+                FormasPago.QUINCENAL  => 2m,
+                FormasPago.CATORCENAL => 2m,
+                _                     => 1m,
             };
-            decimal interesTotal   = dto.monto * (dto.tasa_interes / 100m) * mesesPlazo;
-            decimal ivaRate        = (dto.iva.HasValue && dto.iva > 0) ? dto.iva.Value / 100m : 0m;
-            decimal ivaTotal       = interesTotal * ivaRate;
-            decimal capitalPorPago = Math.Round(dto.monto / dto.plazo_meses, 2);
-            decimal interesPorPago = Math.Round(interesTotal / dto.plazo_meses, 2);
-            decimal ivaPorPago     = Math.Round(ivaTotal / dto.plazo_meses, 2);
-            decimal _pagoBruto     = capitalPorPago + interesPorPago + ivaPorPago;
-            decimal pagoMes        = _pagoBruto % 1 > 0.001m ? Math.Ceiling(_pagoBruto) : _pagoBruto;
-            decimal montoTotal     = dto.monto + interesTotal + ivaTotal;
+            decimal interesPerPeriodo = dto.monto * dto.tasa_interes / (freqDiv * 100m);
+            decimal ivaPerPeriodo     = interesPerPeriodo * 0.16m;
+            decimal pagoMes           = Math.Round(dto.monto / dto.plazo_meses + interesPerPeriodo + ivaPerPeriodo, 2);
+            decimal montoTotal        = pagoMes * dto.plazo_meses;
 
             DateTime fechaInicio =
                 fechaCreacion.AddMonths(1);
@@ -541,7 +511,49 @@ namespace ApiEjemplo.Controllers
                 await _context.SaveChangesAsync();
             }
 
-            // Los períodos se generan al APROBAR el crédito, no al crearlo.
+            // ================================
+            // GENERAR PERÍODOS DE AMORTIZACIÓN
+            // ================================
+            int freqDays = dto.forma_pago switch {
+                FormasPago.DIARIA      => 1,
+                FormasPago.SEMANAL     => 7,
+                FormasPago.CATORCENAL  => 14,
+                FormasPago.QUINCENAL   => 15,
+                _                      => 0, // MENSUAL → usar AddMonths
+            };
+            bool esMonthly   = freqDays == 0;
+            decimal abonoCapital = Math.Round(dto.monto / dto.plazo_meses, 2);
+
+            var periodosList = new List<PeriodoAmortizacion>();
+            for (int i = 1; i <= dto.plazo_meses; i++)
+            {
+                DateTime fechaInicioP = esMonthly
+                    ? fechaCreacion.AddMonths(i - 1)
+                    : fechaCreacion.AddDays((double)(i - 1) * freqDays);
+                DateTime fechaVencP = esMonthly
+                    ? fechaCreacion.AddMonths(i)
+                    : fechaCreacion.AddDays((double)i * freqDays);
+
+                decimal capitalPendiente = dto.monto - abonoCapital * (i - 1);
+                decimal saldoFinal       = i == dto.plazo_meses ? 0m : Math.Max(0m, dto.monto - abonoCapital * i);
+
+                periodosList.Add(new PeriodoAmortizacion
+                {
+                    prestamo_id       = prestamo.prestamo_id,
+                    periodo           = i,
+                    fecha_inicio      = fechaInicioP,
+                    fecha_vencimiento = fechaVencP,
+                    capital_pendiente = capitalPendiente,
+                    abono_capital     = abonoCapital,
+                    interes_normal    = interesPerPeriodo,
+                    interes_iva       = ivaPerPeriodo,
+                    pago_pactado      = pagoMes,
+                    saldo_final       = saldoFinal,
+                    estado_pago       = 1,
+                });
+            }
+            _context.PeriodosAmortizacion.AddRange(periodosList);
+            await _context.SaveChangesAsync();
 
             await _activityService.CreateActivity(
             ActivityType.CREDIT_APPROVED,
@@ -631,22 +643,16 @@ namespace ApiEjemplo.Controllers
             // RECALCULAR DATOS FINANCIEROS
             // ================================
 
-            decimal mesesPlazoPut  = prestamo.forma_pago switch {
-                FormasPago.DIARIA      => prestamo.plazo_meses / 30m,
-                FormasPago.SEMANAL     => prestamo.plazo_meses / 4m,
-                FormasPago.QUINCENAL   => prestamo.plazo_meses / 2m,
-                FormasPago.CATORCENAL  => prestamo.plazo_meses * (14m / 30m),
-                _                      => prestamo.plazo_meses,
+            decimal freqDivPut = prestamo.forma_pago switch {
+                FormasPago.SEMANAL    => 4m,
+                FormasPago.QUINCENAL  => 2m,
+                FormasPago.CATORCENAL => 2m,
+                _                     => 1m,
             };
-            decimal interesTotalPut  = prestamo.monto * (prestamo.tasa_interes / 100m) * mesesPlazoPut;
-            decimal ivaRatePut       = (prestamo.iva.HasValue && prestamo.iva > 0) ? prestamo.iva.Value / 100m : 0m;
-            decimal ivaTotalPut      = interesTotalPut * ivaRatePut;
-            decimal capPorPagoPut    = Math.Round(prestamo.monto / prestamo.plazo_meses, 2);
-            decimal intPorPagoPut    = Math.Round(interesTotalPut / prestamo.plazo_meses, 2);
-            decimal ivaPorPagoPut    = Math.Round(ivaTotalPut / prestamo.plazo_meses, 2);
-            decimal _pagoBrutoPut    = capPorPagoPut + intPorPagoPut + ivaPorPagoPut;
-            prestamo.pago_mes        = _pagoBrutoPut % 1 > 0.001m ? Math.Ceiling(_pagoBrutoPut) : _pagoBrutoPut;
-            prestamo.monto_total     = prestamo.monto + interesTotalPut + ivaTotalPut;
+            decimal interesPerPeriodoPut = prestamo.monto * prestamo.tasa_interes / (freqDivPut * 100m);
+            decimal ivaPerPeriodoPut     = interesPerPeriodoPut * 0.16m;
+            prestamo.pago_mes            = Math.Round(prestamo.monto / prestamo.plazo_meses + interesPerPeriodoPut + ivaPerPeriodoPut, 2);
+            prestamo.monto_total         = prestamo.pago_mes * prestamo.plazo_meses;
 
             // SALDO INICIAL (capital puro, sin interés)
             prestamo.saldo_actual = prestamo.monto;
@@ -735,29 +741,22 @@ namespace ApiEjemplo.Controllers
             };
             bool esMonthly = freqDays == 0;
 
-            decimal mesesPlazoGen    = prestamo.forma_pago switch {
-                FormasPago.DIARIA      => prestamo.plazo_meses / 30m,
-                FormasPago.SEMANAL     => prestamo.plazo_meses / 4m,
-                FormasPago.QUINCENAL   => prestamo.plazo_meses / 2m,
-                FormasPago.CATORCENAL  => prestamo.plazo_meses * (14m / 30m),
-                _                      => prestamo.plazo_meses,
+            decimal freqDiv = prestamo.forma_pago switch {
+                FormasPago.SEMANAL    => 4m,
+                FormasPago.QUINCENAL  => 2m,
+                FormasPago.CATORCENAL => 2m,
+                _                     => 1m,
             };
-            decimal interesTotalGen   = prestamo.monto * (prestamo.tasa_interes / 100m) * mesesPlazoGen;
-            decimal ivaRateGen        = (prestamo.iva.HasValue && prestamo.iva > 0) ? prestamo.iva.Value / 100m : 0m;
-            decimal ivaTotalGen       = interesTotalGen * ivaRateGen;
-            decimal capitalPorPagoGen = Math.Round(prestamo.monto / prestamo.plazo_meses, 2);
-            decimal interesPorPagoGen = Math.Round(interesTotalGen / prestamo.plazo_meses, 2);
-            decimal ivaPorPagoGen     = Math.Round(ivaTotalGen / prestamo.plazo_meses, 2);
-            decimal _pagoBrutoGen     = capitalPorPagoGen + interesPorPagoGen + ivaPorPagoGen;
-            decimal pagoRegularGen    = _pagoBrutoGen % 1 > 0.001m ? Math.Ceiling(_pagoBrutoGen) : _pagoBrutoGen;
+            decimal interesPerPeriodo = prestamo.monto * prestamo.tasa_interes / (freqDiv * 100m);
+            decimal ivaPerPeriodo     = interesPerPeriodo * 0.16m;
+            decimal abonoCapital      = Math.Round(prestamo.monto / prestamo.plazo_meses, 2);
+            decimal pagoMes           = Math.Round(abonoCapital + interesPerPeriodo + ivaPerPeriodo, 2);
 
             DateTime fechaBase = prestamo.fecha_creacion;
 
             var periodosList = new List<PeriodoAmortizacion>();
             for (int i = 1; i <= prestamo.plazo_meses; i++)
             {
-                bool esUltimo = i == prestamo.plazo_meses;
-
                 DateTime fechaInicioP = esMonthly
                     ? fechaBase.AddMonths(i - 1)
                     : fechaBase.AddDays((double)(i - 1) * freqDays);
@@ -765,20 +764,8 @@ namespace ApiEjemplo.Controllers
                     ? fechaBase.AddMonths(i)
                     : fechaBase.AddDays((double)i * freqDays);
 
-                decimal capEste = esUltimo
-                    ? Math.Round(prestamo.monto - capitalPorPagoGen * (prestamo.plazo_meses - 1), 2)
-                    : capitalPorPagoGen;
-                decimal intEste = esUltimo
-                    ? Math.Round(interesTotalGen - interesPorPagoGen * (prestamo.plazo_meses - 1), 2)
-                    : interesPorPagoGen;
-                decimal ivaEste = esUltimo
-                    ? Math.Round(ivaTotalGen - ivaPorPagoGen * (prestamo.plazo_meses - 1), 2)
-                    : ivaPorPagoGen;
-                decimal pagoEste = capEste + intEste + ivaEste;
-                if (pagoEste % 1 > 0.001m) pagoEste = Math.Ceiling(pagoEste);
-
-                decimal capitalPendiente = prestamo.monto - capitalPorPagoGen * (i - 1);
-                decimal saldoFinal       = esUltimo ? 0m : Math.Max(0m, prestamo.monto - capitalPorPagoGen * i);
+                decimal capitalPendiente = prestamo.monto - abonoCapital * (i - 1);
+                decimal saldoFinal       = i == prestamo.plazo_meses ? 0m : Math.Max(0m, prestamo.monto - abonoCapital * i);
 
                 periodosList.Add(new PeriodoAmortizacion
                 {
@@ -787,10 +774,10 @@ namespace ApiEjemplo.Controllers
                     fecha_inicio      = fechaInicioP,
                     fecha_vencimiento = fechaVencP,
                     capital_pendiente = capitalPendiente,
-                    abono_capital     = capEste,
-                    interes_normal    = intEste,
-                    interes_iva       = ivaEste,
-                    pago_pactado      = pagoEste,
+                    abono_capital     = abonoCapital,
+                    interes_normal    = interesPerPeriodo,
+                    interes_iva       = ivaPerPeriodo,
+                    pago_pactado      = pagoMes,
                     saldo_final       = saldoFinal,
                     estado_pago       = 1,
                 });
