@@ -54,6 +54,7 @@ namespace ApiEjemplo.Controllers
 
             var pagos = await query
                 .OrderByDescending(p => p.fecha_pago)
+                .ThenByDescending(p => p.pago_id)
                 .ToListAsync();
 
             var cobradorIds = pagos
@@ -110,6 +111,7 @@ namespace ApiEjemplo.Controllers
 
             var pagos = await query
                 .OrderByDescending(p => p.fecha_pago)
+                .ThenByDescending(p => p.pago_id)
                 .ToListAsync();
 
             var cobradorIds = pagos
