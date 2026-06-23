@@ -877,6 +877,20 @@ namespace ApiEjemplo.Controllers
                 : 0;
             int freqDays = freqDaysFromPeriodos > 0 ? freqDaysFromPeriodos : freqDaysFromFormaPago;
 
+            // Acumulado real de cap/int/iva ya aplicado por período (desde pago_detalle de pagos APLICADOS)
+            var acumPd = await _context.PagoDetalles
+                .Where(pd => pd.prestamo_id == id && pd.periodo_id != null)
+                .Join(_context.Pagos.Where(pg => pg.estatus == EstatusPago.APLICADO),
+                      pd => pd.pago_id, pg => pg.pago_id, (pd, _) => pd)
+                .GroupBy(pd => pd.periodo_id!.Value)
+                .Select(g => new {
+                    pid    = g.Key,
+                    capPag = g.Sum(x => x.capital_aplicado),
+                    intPag = g.Sum(x => x.interes_aplicado),
+                    ivaPag = g.Sum(x => x.iva_aplicado),
+                })
+                .ToDictionaryAsync(x => x.pid);
+
             var result = periodos.Select(p =>
             {
                 string estadoPago;
@@ -930,26 +944,42 @@ namespace ApiEjemplo.Controllers
                     diasMoratorio    = 0;
                 }
 
-                var interesNormal  = p.interes_normal;                        // MONEYPINE-FIX: solo interés sin IVA
-                var interesIVA_val = p.interes_iva;                            // MONEYPINE-FIX: IVA sobre interés
-                var interes        = interesNormal + interesIVA_val;           // MONEYPINE-FIX: total interés (normal + IVA)
+                var interesNormal  = p.interes_normal;
+                var interesIVA_val = p.interes_iva;
+                var interes        = interesNormal + interesIVA_val;
                 var pagoProgramado = p.abono_capital + interes;
+
+                // Cantidad real aún pendiente de pagar (descuenta lo ya abonado via pago_detalle)
+                decimal pagoRestante;
+                if (estadoPago == "PAGADO")
+                {
+                    pagoRestante = 0m;
+                }
+                else
+                {
+                    var ac = acumPd.GetValueOrDefault(p.periodo_id);
+                    decimal capRest = Math.Max(0m, p.abono_capital  - (ac?.capPag ?? 0m));
+                    decimal intRest = Math.Max(0m, p.interes_normal - (ac?.intPag ?? 0m));
+                    decimal ivaRest = Math.Max(0m, p.interes_iva    - (ac?.ivaPag ?? 0m));
+                    pagoRestante = capRest + intRest + ivaRest;
+                }
 
                 return new {
                     periodo          = p.periodo,
                     fechaPago        = p.fecha_vencimiento.ToString("yyyy-MM-dd"),
-                    saldoPendiente   = p.capital_pendiente + interes + interesMoratorio, // MONEYPINE-FIX: incluye interés + mora
+                    saldoPendiente   = p.capital_pendiente + interes + interesMoratorio,
                     capitalPendiente = p.capital_pendiente,
                     abonoCapital     = p.abono_capital,
-                    interes          = interesNormal,                          // MONEYPINE-FIX: solo interés normal (sin IVA)
-                    interesIVA       = interesIVA_val,                         // MONEYPINE-FIX: solo el IVA (antes devolvía total)
+                    interes          = interesNormal,
+                    interesIVA       = interesIVA_val,
                     interesMoratorio,
                     diasMoratorio,
                     saldoFinal       = p.saldo_final,
                     pagoProgramado,
+                    pagoRestante,                                               // restante real de cap+int+iva (parciales)
                     pagoTotal        = pagoProgramado + interesMoratorio,
-                    pagoTotalVisual  = pagoProgramado,                              // Sin mora — para visualización en tabla
-                    pagoPactado      = p.pago_pactado,                         // MONEYPINE-FIX: pago real acordado (pagos parciales)
+                    pagoTotalVisual  = pagoProgramado,
+                    pagoPactado      = p.pago_pactado,
                     estadoPago,
                 };
             }).ToList();
