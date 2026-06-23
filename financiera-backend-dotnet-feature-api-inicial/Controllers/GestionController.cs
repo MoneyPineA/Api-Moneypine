@@ -32,27 +32,37 @@ namespace ApiEjemplo.Controllers
             if (!prestamoIds.Any())
                 return Ok(new List<object>());
 
-            var prestamos = await _context.Prestamos
+            var raw = await _context.Prestamos
                 .Where(p => prestamoIds.Contains(p.prestamo_id))
                 .Include(p => p.Cliente)
                     .ThenInclude(c => c.Usuario)
                 .OrderByDescending(p => p.prestamo_id)
-                .Select(p => new {
-                    p.prestamo_id,
-                    p.cliente_id,
-                    numero_cliente = p.Cliente.clave_cliente,
-                    nombre = (p.Cliente.Usuario != null
-                        ? (p.Cliente.Usuario.nombre ?? "") + " " + (p.Cliente.Usuario.apellido ?? "")
-                        : "Cliente #" + p.cliente_id).Trim(),
-                    apellido_materno = p.Cliente.apellido_materno,
-                    p.monto,
-                    p.estatus,
-                    p.fecha_creacion,
-                    tipo_solicitud = p.grupo_id.HasValue ? "PRÉSTAMO GRUPAL" : "PRÉSTAMO PERSONAL",
-                    p.forma_pago,
-                    total_gestiones = _context.GestionesCobranza.Count(g => g.prestamo_id == p.prestamo_id)
-                })
                 .ToListAsync();
+
+            var gestCounts = await _context.GestionesCobranza
+                .Where(g => prestamoIds.Contains(g.prestamo_id))
+                .GroupBy(g => g.prestamo_id)
+                .Select(g => new { prestamo_id = g.Key, count = g.Count() })
+                .ToDictionaryAsync(x => x.prestamo_id, x => x.count);
+
+            // MONEYPINE-FIX: NombreHelper evita duplicar apellido_materno en clientes legacy
+            var prestamos = raw.Select(p => new {
+                p.prestamo_id,
+                p.cliente_id,
+                numero_cliente   = p.Cliente?.clave_cliente,
+                nombre           = NombreHelper.BuildNombreCliente(
+                    p.Cliente?.Usuario?.nombre,
+                    p.Cliente?.Usuario?.apellido,
+                    p.Cliente?.apellido_materno,
+                    p.cliente_id),
+                apellido_materno = p.Cliente?.apellido_materno,
+                p.monto,
+                p.estatus,
+                p.fecha_creacion,
+                tipo_solicitud   = p.grupo_id.HasValue ? "PRÉSTAMO GRUPAL" : "PRÉSTAMO PERSONAL",
+                p.forma_pago,
+                total_gestiones  = gestCounts.GetValueOrDefault(p.prestamo_id, 0)
+            }).ToList();
 
             return Ok(prestamos);
         }

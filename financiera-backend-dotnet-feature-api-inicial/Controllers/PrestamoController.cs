@@ -56,31 +56,35 @@ namespace ApiEjemplo.Controllers
                 Enum.TryParse<EstatusPrestamo>(estatus, true, out var e))
                 query = query.Where(p => p.estatus == e);
 
-            var result = await query
+            // MONEYPINE-FIX: materializar antes del Select para usar NombreHelper en memoria
+            var raw = await query
                 .OrderByDescending(p => p.prestamo_id)
-                .Select(p => new {
-                    p.prestamo_id,
-                    p.cliente_id,
-                    numero_cliente = p.Cliente.clave_cliente,
-                    nombre = (p.Cliente.Usuario != null
-                        ? (p.Cliente.Usuario.nombre ?? "") + " " + (p.Cliente.Usuario.apellido ?? "")
-                        : "Cliente #" + p.cliente_id).Trim(),
-                    apellido_materno = p.Cliente.apellido_materno,
-                    p.monto,
-                    p.tasa_interes,
-                    p.plazo_meses,
-                    p.forma_pago,
-                    p.estatus,
-                    p.fecha_creacion,
-                    p.fecha_inicio, // MONEYPINE-FIX: exponer para ConsultaMovimientos
-                    p.fecha_fin,    // MONEYPINE-FIX: exponer para ConsultaMovimientos
-                    p.destino,
-                    tipo_solicitud = p.grupo_id.HasValue ? "PRÉSTAMO GRUPAL" : "PRÉSTAMO PERSONAL",
-                    p.grupo_id,
-                    grupo_nombre = p.Grupo != null ? p.Grupo.nombre : null,
-                    administrado_en = p.administrado_en ?? "SINF" // MONEYPINE-FIX: sistema fiscal
-                })
                 .ToListAsync();
+
+            var result = raw.Select(p => new {
+                p.prestamo_id,
+                p.cliente_id,
+                numero_cliente   = p.Cliente?.clave_cliente,
+                nombre           = NombreHelper.BuildNombreCliente(
+                    p.Cliente?.Usuario?.nombre,
+                    p.Cliente?.Usuario?.apellido,
+                    p.Cliente?.apellido_materno,
+                    p.cliente_id),
+                apellido_materno = p.Cliente?.apellido_materno,
+                p.monto,
+                p.tasa_interes,
+                p.plazo_meses,
+                p.forma_pago,
+                p.estatus,
+                p.fecha_creacion,
+                p.fecha_inicio,
+                p.fecha_fin,
+                p.destino,
+                tipo_solicitud   = p.grupo_id.HasValue ? "PRÉSTAMO GRUPAL" : "PRÉSTAMO PERSONAL",
+                p.grupo_id,
+                grupo_nombre     = p.Grupo?.nombre,
+                administrado_en  = p.administrado_en ?? "SINF"
+            }).ToList();
 
             return Ok(result);
         }
