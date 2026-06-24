@@ -948,7 +948,7 @@ namespace ApiEjemplo.Controllers
                     saldoFinal       = p.saldo_final,
                     pagoProgramado,
                     pagoTotal        = pagoProgramado + interesMoratorio,
-                    pagoTotalVisual  = pagoProgramado,                              // Sin mora — para visualización en tabla
+                    pagoTotalVisual  = p.pago_pactado,                             // Sin mora — pago oficial del contrato
                     pagoPactado      = p.pago_pactado,                         // MONEYPINE-FIX: pago real acordado (pagos parciales)
                     estadoPago,
                 };
