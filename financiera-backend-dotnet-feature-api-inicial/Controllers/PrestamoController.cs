@@ -173,7 +173,7 @@ namespace ApiEjemplo.Controllers
             decimal interesPorPagoApro = Math.Round(interesTotalApro / prestamo.plazo_meses, 2);
             decimal ivaPorPagoApro     = Math.Round(ivaTotalApro / prestamo.plazo_meses, 2);
             decimal _pagoBrutoApro     = capitalPorPagoApro + interesPorPagoApro + ivaPorPagoApro;
-            decimal pagoRegularApro    = _pagoBrutoApro % 1 > 0.001m ? Math.Ceiling(_pagoBrutoApro) : _pagoBrutoApro;
+            decimal pagoRegularApro    = Math.Round(_pagoBrutoApro, 2);
 
             prestamo.pago_mes    = pagoRegularApro;
             prestamo.monto_total = prestamo.monto + interesTotalApro + ivaTotalApro;
@@ -375,6 +375,16 @@ namespace ApiEjemplo.Controllers
             var totalMoraPagada = p.Pagos.Sum(x => x.mora_pagada);
             var pagosRealizados = p.Pagos.Count;
 
+            // MONEYPINE-FIX: usar pago_mes real desde primer período (evita error de Math.Ceiling en BD legada)
+            var primerPeriodo = await _context.PeriodosAmortizacion
+                .Where(pa => pa.prestamo_id == id)
+                .OrderBy(pa => pa.periodo)
+                .Select(pa => new { pa.abono_capital, pa.interes_normal, pa.interes_iva })
+                .FirstOrDefaultAsync();
+            decimal pagoMesReal = primerPeriodo != null
+                ? Math.Round(primerPeriodo.abono_capital + primerPeriodo.interes_normal + primerPeriodo.interes_iva, 2)
+                : p.pago_mes;
+
             return Ok(new {
                 p.prestamo_id,
                 p.cliente_id,
@@ -388,7 +398,7 @@ namespace ApiEjemplo.Controllers
                 p.fecha_inicio,
                 p.fecha_fin,
                 p.fecha_proximo_pago,
-                p.pago_mes,
+                pago_mes = pagoMesReal,
                 p.mora_diaria,
                 p.tasa_moratorio_anual,
                 p.saldo_actual,
@@ -475,7 +485,7 @@ namespace ApiEjemplo.Controllers
             decimal interesPorPago = Math.Round(interesTotal / dto.plazo_meses, 2);
             decimal ivaPorPago     = Math.Round(ivaTotal / dto.plazo_meses, 2);
             decimal _pagoBruto     = capitalPorPago + interesPorPago + ivaPorPago;
-            decimal pagoMes        = _pagoBruto % 1 > 0.001m ? Math.Ceiling(_pagoBruto) : _pagoBruto;
+            decimal pagoMes        = Math.Round(_pagoBruto, 2);
             decimal montoTotal     = dto.monto + interesTotal + ivaTotal;
 
             DateTime fechaInicio =
@@ -649,7 +659,7 @@ namespace ApiEjemplo.Controllers
             decimal intPorPagoPut    = Math.Round(interesTotalPut / prestamo.plazo_meses, 2);
             decimal ivaPorPagoPut    = Math.Round(ivaTotalPut / prestamo.plazo_meses, 2);
             decimal _pagoBrutoPut    = capPorPagoPut + intPorPagoPut + ivaPorPagoPut;
-            prestamo.pago_mes        = _pagoBrutoPut % 1 > 0.001m ? Math.Ceiling(_pagoBrutoPut) : _pagoBrutoPut;
+            prestamo.pago_mes        = Math.Round(_pagoBrutoPut, 2);
             prestamo.monto_total     = prestamo.monto + interesTotalPut + ivaTotalPut;
 
             // SALDO INICIAL (capital puro, sin interés)
