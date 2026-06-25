@@ -181,7 +181,7 @@ namespace ApiEjemplo.Controllers
 
         // =====================================================
         // POST: api/Pago/preview
-        // Calcula la distribución sin aplicar ni guardar
+        // Calcula la distribución sin aplicar ni guardar 
         // =====================================================
         [Authorize]
         [HttpPost("preview")]
