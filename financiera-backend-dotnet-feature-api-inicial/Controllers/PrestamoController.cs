@@ -173,10 +173,10 @@ namespace ApiEjemplo.Controllers
             decimal interesPorPagoApro = Math.Round(interesTotalApro / prestamo.plazo_meses, 2);
             decimal ivaPorPagoApro     = Math.Round(ivaTotalApro / prestamo.plazo_meses, 2);
             decimal _pagoBrutoApro     = capitalPorPagoApro + interesPorPagoApro + ivaPorPagoApro;
-            decimal pagoRegularApro    = Math.Round(_pagoBrutoApro, 2);
+            decimal pagoRegularApro    = _pagoBrutoApro % 1 > 0.001m ? Math.Ceiling(_pagoBrutoApro) : _pagoBrutoApro;
 
             prestamo.pago_mes    = pagoRegularApro;
-            prestamo.monto_total = prestamo.monto + interesTotalApro + ivaTotalApro;
+            prestamo.monto_total = pagoRegularApro * prestamo.plazo_meses;
             prestamo.mora_diaria = Math.Round(pagoRegularApro * (prestamo.tasa_interes * 12m * 2m / 100m) / 360m, 2);
 
             var periodosList = new List<PeriodoAmortizacion>();
@@ -200,8 +200,15 @@ namespace ApiEjemplo.Controllers
                 decimal ivaEste = esUltimo
                     ? Math.Round(ivaTotalApro - ivaPorPagoApro * (prestamo.plazo_meses - 1), 2)
                     : ivaPorPagoApro;
-                decimal pagoEste = capEste + intEste + ivaEste;
-                if (pagoEste % 1 > 0.001m) pagoEste = Math.Ceiling(pagoEste);
+                decimal rawTotal = capEste + intEste + ivaEste;
+                decimal pagoEste = rawTotal % 1 > 0.001m ? Math.Ceiling(rawTotal) : rawTotal;
+                decimal ceilDiff = pagoEste - rawTotal;
+                if (ceilDiff > 0)
+                {
+                    if      (ivaEste % 1 > 0.001m) ivaEste = Math.Round(ivaEste + ceilDiff, 2);
+                    else if (intEste % 1 > 0.001m) intEste = Math.Round(intEste + ceilDiff, 2);
+                    else                           capEste = Math.Round(capEste + ceilDiff, 2);
+                }
 
                 decimal capitalPendiente = prestamo.monto - capitalPorPagoApro * (i - 1);
                 decimal saldoFinal       = esUltimo
@@ -379,10 +386,12 @@ namespace ApiEjemplo.Controllers
             var primerPeriodo = await _context.PeriodosAmortizacion
                 .Where(pa => pa.prestamo_id == id)
                 .OrderBy(pa => pa.periodo)
-                .Select(pa => new { pa.abono_capital, pa.interes_normal, pa.interes_iva })
+                .Select(pa => new { pa.abono_capital, pa.interes_normal, pa.interes_iva, pa.pago_pactado })
                 .FirstOrDefaultAsync();
             decimal pagoMesReal = primerPeriodo != null
-                ? Math.Round(primerPeriodo.abono_capital + primerPeriodo.interes_normal + primerPeriodo.interes_iva, 2)
+                ? (primerPeriodo.pago_pactado > 0m
+                    ? primerPeriodo.pago_pactado
+                    : Math.Round(primerPeriodo.abono_capital + primerPeriodo.interes_normal + primerPeriodo.interes_iva, 2))
                 : p.pago_mes;
 
             return Ok(new {
@@ -485,8 +494,8 @@ namespace ApiEjemplo.Controllers
             decimal interesPorPago = Math.Round(interesTotal / dto.plazo_meses, 2);
             decimal ivaPorPago     = Math.Round(ivaTotal / dto.plazo_meses, 2);
             decimal _pagoBruto     = capitalPorPago + interesPorPago + ivaPorPago;
-            decimal pagoMes        = Math.Round(_pagoBruto, 2);
-            decimal montoTotal     = dto.monto + interesTotal + ivaTotal;
+            decimal pagoMes        = _pagoBruto % 1 > 0.001m ? Math.Ceiling(_pagoBruto) : _pagoBruto;
+            decimal montoTotal     = pagoMes * dto.plazo_meses;
 
             DateTime fechaInicio =
                 fechaCreacion.AddMonths(1);
@@ -659,8 +668,8 @@ namespace ApiEjemplo.Controllers
             decimal intPorPagoPut    = Math.Round(interesTotalPut / prestamo.plazo_meses, 2);
             decimal ivaPorPagoPut    = Math.Round(ivaTotalPut / prestamo.plazo_meses, 2);
             decimal _pagoBrutoPut    = capPorPagoPut + intPorPagoPut + ivaPorPagoPut;
-            prestamo.pago_mes        = Math.Round(_pagoBrutoPut, 2);
-            prestamo.monto_total     = prestamo.monto + interesTotalPut + ivaTotalPut;
+            prestamo.pago_mes        = _pagoBrutoPut % 1 > 0.001m ? Math.Ceiling(_pagoBrutoPut) : _pagoBrutoPut;
+            prestamo.monto_total     = prestamo.pago_mes * prestamo.plazo_meses;
 
             // SALDO INICIAL (capital puro, sin interés)
             prestamo.saldo_actual = prestamo.monto;
@@ -788,8 +797,15 @@ namespace ApiEjemplo.Controllers
                 decimal ivaEste = esUltimo
                     ? Math.Round(ivaTotalGen - ivaPorPagoGen * (prestamo.plazo_meses - 1), 2)
                     : ivaPorPagoGen;
-                decimal pagoEste = capEste + intEste + ivaEste;
-                if (pagoEste % 1 > 0.001m) pagoEste = Math.Ceiling(pagoEste);
+                decimal rawTotal = capEste + intEste + ivaEste;
+                decimal pagoEste = rawTotal % 1 > 0.001m ? Math.Ceiling(rawTotal) : rawTotal;
+                decimal ceilDiff = pagoEste - rawTotal;
+                if (ceilDiff > 0)
+                {
+                    if      (ivaEste % 1 > 0.001m) ivaEste = Math.Round(ivaEste + ceilDiff, 2);
+                    else if (intEste % 1 > 0.001m) intEste = Math.Round(intEste + ceilDiff, 2);
+                    else                           capEste = Math.Round(capEste + ceilDiff, 2);
+                }
 
                 decimal capitalPendiente = prestamo.monto - capitalPorPagoGen * (i - 1);
                 decimal saldoFinal       = esUltimo ? 0m : Math.Max(0m, prestamo.monto - capitalPorPagoGen * i);
@@ -811,6 +827,9 @@ namespace ApiEjemplo.Controllers
             }
 
             _context.PeriodosAmortizacion.AddRange(periodosList);
+            prestamo.pago_mes    = pagoRegularGen;
+            prestamo.monto_total = pagoRegularGen * prestamo.plazo_meses;
+            _context.Prestamos.Update(prestamo);
             await _context.SaveChangesAsync();
 
             return Ok(new { mensaje = $"{periodosList.Count} períodos generados para préstamo #{id}.", total = periodosList.Count });
@@ -957,7 +976,7 @@ namespace ApiEjemplo.Controllers
                 var interesNormal  = p.interes_normal;
                 var interesIVA_val = p.interes_iva;
                 var interes        = interesNormal + interesIVA_val;
-                var pagoProgramado = p.abono_capital + interes;
+                var pagoProgramado = p.pago_pactado > 0m ? p.pago_pactado : (p.abono_capital + interes);
 
                 // Cantidad real aún pendiente de pagar (descuenta lo ya abonado via pago_detalle)
                 decimal pagoRestante;
