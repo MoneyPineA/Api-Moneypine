@@ -646,14 +646,17 @@ namespace ApiEjemplo.Services
         public async Task<EstatusPrestamo> RecalcularEstatus(
             int prestamoId, decimal saldo, DateTime referencia)
         {
-            if (saldo <= 0.01m) return EstatusPrestamo.LIQUIDADO;
+            bool hayMora = await _context.PeriodosAmortizacion
+                .AnyAsync(pa => pa.prestamo_id == prestamoId && pa.estado_pago == 5);
+
+            if (saldo <= 0.01m && !hayMora) return EstatusPrestamo.LIQUIDADO;
 
             bool hayVencido = await _context.PeriodosAmortizacion
                 .AnyAsync(pa => pa.prestamo_id == prestamoId
                              && pa.estado_pago == 1
                              && pa.fecha_vencimiento < referencia);
 
-            return hayVencido ? EstatusPrestamo.ATRASADO : EstatusPrestamo.ACTIVO;
+            return (hayVencido || hayMora) ? EstatusPrestamo.ATRASADO : EstatusPrestamo.ACTIVO;
         }
 
         // ── Helper privado ────────────────────────────────────────────────

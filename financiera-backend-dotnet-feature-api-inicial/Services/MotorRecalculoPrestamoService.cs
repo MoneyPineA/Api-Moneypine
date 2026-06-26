@@ -253,18 +253,19 @@ namespace ApiEjemplo.Services
             // ── 6. Estado del préstamo ────────────────────────────────────
             prestamo.saldo_actual = Math.Max(0m, prestamo.monto - runningCap);
 
-            bool hayVencido = periodos.Any(p =>
-                p.estado_pago == 1 &&
-                p.fecha_vencimiento.Date < hoy);
+            bool hayVencido      = periodos.Any(p => p.estado_pago == 1 && p.fecha_vencimiento.Date < hoy);
+            bool hayMoraPendiente = periodos.Any(p => p.estado_pago == 5);
 
-            if (prestamo.saldo_actual <= 0.01m)
+            if (prestamo.saldo_actual <= 0.01m && !hayMoraPendiente)
             {
-                prestamo.estatus  = EstatusPrestamo.LIQUIDADO;
+                prestamo.estatus   = EstatusPrestamo.LIQUIDADO;
                 prestamo.fecha_fin ??= DateTime.SpecifyKind(hoy, DateTimeKind.Unspecified);
             }
             else
             {
-                prestamo.estatus   = hayVencido ? EstatusPrestamo.ATRASADO : EstatusPrestamo.ACTIVO;
+                prestamo.estatus   = (hayVencido || hayMoraPendiente)
+                                     ? EstatusPrestamo.ATRASADO
+                                     : EstatusPrestamo.ACTIVO;
                 prestamo.fecha_fin = null;
             }
 
