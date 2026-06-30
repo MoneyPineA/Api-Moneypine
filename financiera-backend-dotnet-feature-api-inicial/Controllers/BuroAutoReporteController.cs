@@ -176,9 +176,25 @@ namespace ApiEjemplo.Controllers
         {
             try
             {
-                var existing = await _db.BuroAutoReportes.FindAsync(clienteId);
+                // FindAsync falla con clave compuesta (cliente_id + prestamo_id); usar FirstOrDefaultAsync
+                var existing = await _db.BuroAutoReportes
+                    .FirstOrDefaultAsync(b => b.cliente_id == clienteId);
                 if (existing == null) return NotFound();
                 _db.BuroAutoReportes.Remove(existing);
+
+                // Agregar a exclusión para que el cron job no lo vuelva a reportar
+                var exclusion = await _db.BuroExclusiones.FindAsync(clienteId);
+                if (exclusion == null)
+                {
+                    _db.BuroExclusiones.Add(new Models.BuroExclusion
+                    {
+                        cliente_id   = clienteId,
+                        excluido_por = null,
+                        fecha        = DateTime.UtcNow,
+                        motivo       = "Quitado manualmente de lista negra por administrador",
+                    });
+                }
+
                 await _db.SaveChangesAsync();
                 return Ok(new { message = "Cliente removido del auto-reporte" });
             }
