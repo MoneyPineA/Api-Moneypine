@@ -68,10 +68,15 @@ namespace ApiEjemplo.Services
 
                 var hoy = DateTime.UtcNow.Date;
 
+                var excluidos = await db.BuroExclusiones
+                    .Select(e => e.cliente_id)
+                    .ToHashSetAsync();
+
                 var candidatos = await db.Prestamos
                     .Where(p =>
                         (p.estatus == EstatusPrestamo.ACTIVO || p.estatus == EstatusPrestamo.ATRASADO)
-                        && p.fecha_proximo_pago.HasValue)
+                        && p.fecha_proximo_pago.HasValue
+                        && !excluidos.Contains(p.cliente_id))
                     .ToListAsync();
 
                 int reportados = 0;
@@ -80,7 +85,7 @@ namespace ApiEjemplo.Services
                     var diasMora = (int)(hoy - p.fecha_proximo_pago!.Value.Date).TotalDays - p.dias_gracia;
                     if (diasMora < 90) continue;
 
-                    var existing = await db.BuroAutoReportes.FindAsync(p.cliente_id);
+                    var existing = await db.BuroAutoReportes.FirstOrDefaultAsync(b => b.cliente_id == p.cliente_id);
                     if (existing != null)
                     {
                         existing.prestamo_id    = p.prestamo_id;
