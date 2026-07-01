@@ -68,9 +68,10 @@ namespace ApiEjemplo.Services
 
                 var hoy = DateTime.UtcNow.Date;
 
-                var excluidos = await db.BuroExclusiones
+                var excluidos = (await db.BuroExclusiones
                     .Select(e => e.cliente_id)
-                    .ToHashSetAsync();
+                    .ToListAsync())
+                    .ToHashSet();
 
                 var candidatos = await db.Prestamos
                     .Where(p =>
