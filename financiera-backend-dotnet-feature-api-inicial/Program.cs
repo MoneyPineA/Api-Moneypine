@@ -107,8 +107,8 @@ builder.Services.AddScoped<TotalGanadoPorPeriodoService>();
 builder.Services.AddScoped<AplicacionPagoService>();
 builder.Services.AddScoped<MotorRecalculoPrestamoService>();
 
-// MONEYPINE-FIX: cron job diario — auto-reporta clientes con mora >= 90 días al buró
-builder.Services.AddHostedService<BuroAutoReporteService>();
+// MONEYPINE-FIX: cron job diario — DESHABILITADO temporalmente
+// builder.Services.AddHostedService<BuroAutoReporteService>();
 
 // Swagger
 builder.Services.AddEndpointsApiExplorer();
