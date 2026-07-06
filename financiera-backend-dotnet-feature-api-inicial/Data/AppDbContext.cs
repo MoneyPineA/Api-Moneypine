@@ -46,6 +46,9 @@ namespace ApiEjemplo.Data
         // Detalle granular por periodo de cada pago aplicado
         public DbSet<PagoDetalle>       PagoDetalles       { get; set; }
 
+        // Lista negra persistida en BD (criterio: mora > 130 días y > $1500)
+        public DbSet<ListaNegra>        ListasNegras       { get; set; }
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
@@ -258,6 +261,28 @@ namespace ApiEjemplo.Data
                 .HasForeignKey(pd => pd.periodo_id)
                 .OnDelete(DeleteBehavior.SetNull)
                 .IsRequired(false);
+
+            // =======================
+            // LISTA NEGRA
+            // =======================
+            modelBuilder.Entity<ListaNegra>(entity =>
+            {
+                entity.HasIndex(ln => ln.cliente_id);
+                entity.HasIndex(ln => ln.prestamo_id);
+                entity.HasIndex(ln => ln.estado);
+                entity.HasIndex(ln => new { ln.cliente_id, ln.prestamo_id, ln.estado });
+
+                entity.HasOne(ln => ln.Cliente)
+                      .WithMany()
+                      .HasForeignKey(ln => ln.cliente_id)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(ln => ln.Prestamo)
+                      .WithMany()
+                      .HasForeignKey(ln => ln.prestamo_id)
+                      .OnDelete(DeleteBehavior.SetNull)
+                      .IsRequired(false);
+            });
         }
     }
 }
