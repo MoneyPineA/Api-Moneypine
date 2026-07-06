@@ -106,6 +106,7 @@ builder.Services.AddScoped<TotalCreditosPagadosService>();
 builder.Services.AddScoped<TotalGanadoPorPeriodoService>();
 builder.Services.AddScoped<AplicacionPagoService>();
 builder.Services.AddScoped<MotorRecalculoPrestamoService>();
+builder.Services.AddScoped<ListaNegraService>();
 
 // MONEYPINE-FIX: cron job diario — DESHABILITADO temporalmente
 // builder.Services.AddHostedService<BuroAutoReporteService>();
