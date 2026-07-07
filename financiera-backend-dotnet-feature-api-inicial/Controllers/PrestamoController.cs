@@ -906,19 +906,51 @@ namespace ApiEjemplo.Controllers
                 : 0;
             int freqDays = freqDaysFromPeriodos > 0 ? freqDaysFromPeriodos : freqDaysFromFormaPago;
 
-            // Acumulado real de cap/int/iva ya aplicado por período (desde pago_detalle de pagos APLICADOS)
-            var acumPd = await _context.PagoDetalles
+            // Detalles de pago por período — usados para acumulados Y para subfila de desglose en UI
+            var rawDetalles = await _context.PagoDetalles
                 .Where(pd => pd.prestamo_id == id && pd.periodo_id != null)
                 .Join(_context.Pagos.Where(pg => pg.estatus == EstatusPago.APLICADO),
-                      pd => pd.pago_id, pg => pg.pago_id, (pd, _) => pd)
-                .GroupBy(pd => pd.periodo_id!.Value)
-                .Select(g => new {
+                      pd => pd.pago_id, pg => pg.pago_id,
+                      (pd, pg) => new {
+                          pd.periodo_id,
+                          pd.pago_id,
+                          pd.capital_aplicado,
+                          pd.interes_aplicado,
+                          pd.iva_aplicado,
+                          pd.mora_aplicada,
+                          pd.tipo_pago,
+                          pg.fecha_pago,
+                          pg.metodo_pago,
+                      })
+                .ToListAsync();
+
+            // Acumulado por período (para calcular pagoRestante)
+            var acumPd = rawDetalles
+                .GroupBy(x => x.periodo_id!.Value)
+                .ToDictionary(g => g.Key, g => new {
                     pid    = g.Key,
                     capPag = g.Sum(x => x.capital_aplicado),
                     intPag = g.Sum(x => x.interes_aplicado),
                     ivaPag = g.Sum(x => x.iva_aplicado),
-                })
-                .ToDictionaryAsync(x => x.pid);
+                });
+
+            // Detalles individuales por período ordenados por fecha (para subfila en UI)
+            var detallesMap = rawDetalles
+                .GroupBy(x => x.periodo_id!.Value)
+                .ToDictionary(g => g.Key, g =>
+                    g.OrderBy(x => x.fecha_pago)
+                     .Select(x => new {
+                         pagoId     = x.pago_id,
+                         capital    = Math.Round(x.capital_aplicado, 2),
+                         interes    = Math.Round(x.interes_aplicado, 2),
+                         iva        = Math.Round(x.iva_aplicado, 2),
+                         mora       = Math.Round(x.mora_aplicada, 2),
+                         tipoPago   = x.tipo_pago,
+                         fechaPago  = x.fecha_pago.ToString("yyyy-MM-dd"),
+                         metodoPago = x.metodo_pago ?? "EFECTIVO",
+                     })
+                     .ToList()
+                );
 
             var result = periodos.Select(p =>
             {
@@ -1005,11 +1037,14 @@ namespace ApiEjemplo.Controllers
                     diasMoratorio,
                     saldoFinal       = p.saldo_final,
                     pagoProgramado,
-                    pagoRestante,                                               // restante real de cap+int+iva (parciales)
+                    pagoRestante,
                     pagoTotal        = pagoProgramado + interesMoratorio,
                     pagoTotalVisual  = pagoProgramado,
                     pagoPactado      = p.pago_pactado,
                     estadoPago,
+                    detallesPago     = detallesMap.ContainsKey(p.periodo_id)
+                                           ? (object)detallesMap[p.periodo_id]
+                                           : Array.Empty<object>(),
                 };
             }).ToList();
 
