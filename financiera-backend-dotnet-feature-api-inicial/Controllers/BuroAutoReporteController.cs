@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ApiEjemplo.Data;
+using ApiEjemplo.Models;
 
 namespace ApiEjemplo.Controllers
 {
@@ -13,6 +14,52 @@ namespace ApiEjemplo.Controllers
         public BuroAutoReporteController(AppDbContext db)
         {
             _db = db;
+        }
+
+        // POST /api/BuroAutoReporte — reporte manual de un cliente al buró antes de que
+        // el cron de mora >= 90 días lo haga automáticamente (crea o actualiza la fila).
+        [HttpPost]
+        public async Task<IActionResult> Reportar([FromBody] BuroAutoReporte dto)
+        {
+            try
+            {
+                if (dto.cliente_id <= 0 || dto.prestamo_id <= 0)
+                    return BadRequest("cliente_id y prestamo_id son requeridos");
+
+                var existing = await _db.BuroAutoReportes
+                    .FirstOrDefaultAsync(b => b.cliente_id == dto.cliente_id);
+                if (existing != null)
+                {
+                    existing.prestamo_id     = dto.prestamo_id;
+                    existing.fecha_reporte   = DateTime.UtcNow;
+                    existing.dias_mora       = dto.dias_mora;
+                    existing.saldo_pendiente = dto.saldo_pendiente;
+                    existing.motivo          = dto.motivo ?? "REPORTADO MANUALMENTE por administrador";
+                }
+                else
+                {
+                    _db.BuroAutoReportes.Add(new BuroAutoReporte
+                    {
+                        cliente_id      = dto.cliente_id,
+                        prestamo_id     = dto.prestamo_id,
+                        fecha_reporte   = DateTime.UtcNow,
+                        dias_mora       = dto.dias_mora,
+                        saldo_pendiente = dto.saldo_pendiente,
+                        motivo          = dto.motivo ?? "REPORTADO MANUALMENTE por administrador",
+                    });
+                }
+
+                // Un reporte manual anula cualquier exclusión previa del mismo cliente
+                var exclusion = await _db.BuroExclusiones.FindAsync(dto.cliente_id);
+                if (exclusion != null) _db.BuroExclusiones.Remove(exclusion);
+
+                await _db.SaveChangesAsync();
+                return Ok(new { message = "Cliente reportado al buró correctamente" });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = ex.Message, inner = ex.InnerException?.Message });
+            }
         }
 
         // GET /api/BuroAutoReporte — lista todos los clientes auto-reportados por mora >= 90 días
