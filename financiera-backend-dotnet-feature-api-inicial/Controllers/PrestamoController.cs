@@ -1052,6 +1052,33 @@ namespace ApiEjemplo.Controllers
         }
 
         // =====================================================
+        // GET: api/Prestamo/dias-mora
+        // MONEYPINE-FIX: suma de dias_moratorio (periodos en RETRASO: estado_pago=1 y ya vencidos)
+        // agrupada por prestamo_id, en una sola consulta — usado por Buró de Crédito para evitar
+        // llamar GET /{id}/amortizacion una vez por cada crédito (N+1, muy lento con el portafolio completo).
+        // =====================================================
+        [HttpGet("dias-mora")]
+        public async Task<IActionResult> GetDiasMoraTotales()
+        {
+            var hoy = DateTime.UtcNow.Date;
+
+            var vencidos = await _context.PeriodosAmortizacion
+                .Where(pa => pa.estado_pago == 1 && pa.fecha_vencimiento.Date <= hoy)
+                .Select(pa => new { pa.prestamo_id, pa.fecha_vencimiento })
+                .ToListAsync();
+
+            var result = vencidos
+                .GroupBy(p => p.prestamo_id)
+                .Select(g => new
+                {
+                    prestamo_id     = g.Key,
+                    dias_mora_total = g.Sum(p => (int)(hoy - p.fecha_vencimiento.Date).TotalDays),
+                });
+
+            return Ok(result);
+        }
+
+        // =====================================================
         // GET: api/Prestamo/comisiones
         // Devuelve préstamos con comisión calculada por asesor
         // =====================================================
