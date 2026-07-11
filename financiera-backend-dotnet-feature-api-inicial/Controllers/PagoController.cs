@@ -373,5 +373,48 @@ namespace ApiEjemplo.Controllers
                 saldoActual       = prestamo.saldo_actual,
             });
         }
+
+        // =====================================================
+        // POST: api/Pago/recalibrar-todos
+        // Reconstruye el estado completo de TODOS los préstamos en estatus
+        // ACTIVO o ATRASADO (mismo motor que /recalibrar/{id}, aplicado en lote).
+        // Uso puntual tras corregir datos de periodo_amortizacion directamente en la BD.
+        // Un préstamo que falle no detiene el resto — se reporta en "prestamosFallidos".
+        // Solo ADMIN.
+        // =====================================================
+        [Authorize(Roles = "ADMIN")]
+        [HttpPost("recalibrar-todos")]
+        public async Task<IActionResult> RecalibrarTodos()
+        {
+            var prestamoIds = await _context.Prestamos
+                .Where(p => p.estatus == EstatusPrestamo.ACTIVO || p.estatus == EstatusPrestamo.ATRASADO)
+                .Select(p => p.prestamo_id)
+                .ToListAsync();
+
+            var exitosos = new List<int>();
+            var fallidos  = new List<object>();
+
+            foreach (var id in prestamoIds)
+            {
+                try
+                {
+                    await _motorRecalculo.Reconstruir(id);
+                    exitosos.Add(id);
+                }
+                catch (Exception ex)
+                {
+                    fallidos.Add(new { prestamo_id = id, error = ex.Message });
+                }
+            }
+
+            return Ok(new
+            {
+                message           = $"Recalibración masiva completada: {exitosos.Count} de {prestamoIds.Count} préstamos procesados correctamente.",
+                totalPrestamos    = prestamoIds.Count,
+                exitosos          = exitosos.Count,
+                fallidos          = fallidos.Count,
+                prestamosFallidos = fallidos,
+            });
+        }
     }
 }
