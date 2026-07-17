@@ -49,9 +49,44 @@ namespace ApiEjemplo.Data
         // Lista negra persistida en BD (criterio: mora > 130 días y > $1500)
         public DbSet<ListaNegra>        ListasNegras       { get; set; }
 
+        // Anotaciones de cliente (pestaña Anotaciones del detalle)
+        public DbSet<ClienteAnotacion>  ClienteAnotaciones { get; set; }
+
+        // Formatos de documentos (plantillas oficiales, archivo en BLOB)
+        public DbSet<FormatoDocumento>  FormatosDocumentos { get; set; }
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
+
+            // =======================
+            // FORMATO_DOCUMENTO
+            // =======================
+            modelBuilder.Entity<FormatoDocumento>(entity =>
+            {
+                entity.Property(f => f.contenido).HasColumnType("LONGBLOB");
+                entity.Property(f => f.icono).HasColumnType("MEDIUMBLOB");
+                entity.HasOne(f => f.Usuario)
+                      .WithMany()
+                      .HasForeignKey(f => f.usuario_id)
+                      .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            // =======================
+            // CLIENTE_ANOTACION
+            // =======================
+            modelBuilder.Entity<ClienteAnotacion>(entity =>
+            {
+                entity.HasOne(a => a.Cliente)
+                      .WithMany()
+                      .HasForeignKey(a => a.cliente_id)
+                      .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(a => a.Usuario)
+                      .WithMany()
+                      .HasForeignKey(a => a.usuario_id)
+                      .OnDelete(DeleteBehavior.Restrict);
+            });
 
             // =======================
             // USUARIO
