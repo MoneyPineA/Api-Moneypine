@@ -62,6 +62,13 @@ namespace ApiEjemplo.Controllers
                     estado_domicilio = c.estado_domicilio, // MONEYPINE-FIX: exponer estado_domicilio
                     num_ext          = c.num_ext,
                     calle            = c.calle,
+                    numero_int       = c.numero_int,
+                    ref_calle1       = c.ref_calle1,
+                    ref_calle2       = c.ref_calle2,
+                    ref_adicional    = c.ref_adicional,
+                    tel_celular      = c.tel_celular,
+                    fec_alta         = c.fec_alta,
+                    fec_baja         = c.fec_baja,
                     latitud          = c.latitud,
                     longitud         = c.longitud,
                     fecha_nacimiento   = c.fecha_nacimiento,
@@ -121,6 +128,13 @@ namespace ApiEjemplo.Controllers
                     estado_domicilio   = c.estado_domicilio,
                     num_ext            = c.num_ext,
                     calle              = c.calle,
+                    numero_int         = c.numero_int,
+                    ref_calle1         = c.ref_calle1,
+                    ref_calle2         = c.ref_calle2,
+                    ref_adicional      = c.ref_adicional,
+                    tel_celular        = c.tel_celular,
+                    fec_alta           = c.fec_alta,
+                    fec_baja           = c.fec_baja,
                     latitud            = c.latitud,
                     longitud           = c.longitud,
                     fecha_nacimiento   = c.fecha_nacimiento,
@@ -226,6 +240,11 @@ namespace ApiEjemplo.Controllers
             cliente.num_ext          = dto.num_ext          ?? cliente.num_ext;
             cliente.ciudad           = dto.ciudad           ?? cliente.ciudad;
             cliente.calle            = dto.calle            ?? cliente.calle;
+            cliente.numero_int       = dto.numero_int       ?? cliente.numero_int;
+            cliente.ref_calle1       = dto.ref_calle1       ?? cliente.ref_calle1;
+            cliente.ref_calle2       = dto.ref_calle2       ?? cliente.ref_calle2;
+            cliente.ref_adicional    = dto.ref_adicional    ?? cliente.ref_adicional;
+            cliente.tel_celular      = dto.tel_celular      ?? cliente.tel_celular;
             cliente.latitud          = dto.latitud          ?? cliente.latitud;
             cliente.longitud         = dto.longitud         ?? cliente.longitud;
             cliente.fecha_nacimiento = dto.fecha_nacimiento ?? cliente.fecha_nacimiento;
@@ -312,5 +331,97 @@ namespace ApiEjemplo.Controllers
 
             return NoContent();
         }
+
+        // ============================
+        // GET: api/Cliente/{id}/anotaciones
+        // Lista las anotaciones del cliente con el nombre del autor
+        // ============================
+        [Authorize]
+        [HttpGet("{id}/anotaciones")]
+        public async Task<IActionResult> GetAnotaciones(int id)
+        {
+            var existe = await _context.Clientes.AnyAsync(c => c.cliente_id == id);
+            if (!existe)
+                return NotFound("Cliente no encontrado");
+
+            var anotaciones = await _context.ClienteAnotaciones
+                .Where(a => a.cliente_id == id)
+                .OrderByDescending(a => a.fecha_creacion)
+                .Select(a => new
+                {
+                    a.anotacion_id,
+                    a.cliente_id,
+                    a.origen,
+                    a.anotacion,
+                    a.fecha_creacion,
+                    autor = a.Usuario != null ? $"{a.Usuario.nombre} {a.Usuario.apellido}".Trim() : null,
+                })
+                .ToListAsync();
+
+            return Ok(anotaciones);
+        }
+
+        // ============================
+        // POST: api/Cliente/{id}/anotaciones
+        // Crea una anotación; el autor se toma del JWT
+        // ============================
+        [Authorize]
+        [HttpPost("{id}/anotaciones")]
+        public async Task<IActionResult> CreateAnotacion(int id, [FromBody] AnotacionCreateDTO dto)
+        {
+            if (string.IsNullOrWhiteSpace(dto.anotacion))
+                return BadRequest("La anotación no puede estar vacía");
+
+            var existe = await _context.Clientes.AnyAsync(c => c.cliente_id == id);
+            if (!existe)
+                return NotFound("Cliente no encontrado");
+
+            var idClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            if (!int.TryParse(idClaim, out var usuarioId))
+                return Unauthorized("Token sin identificador de usuario");
+
+            var nueva = new ClienteAnotacion
+            {
+                cliente_id = id,
+                usuario_id = usuarioId,
+                origen     = string.IsNullOrWhiteSpace(dto.origen) ? "MANUAL" : dto.origen!.Trim().ToUpper(),
+                anotacion  = dto.anotacion.Trim(),
+            };
+
+            _context.ClienteAnotaciones.Add(nueva);
+            await _context.SaveChangesAsync();
+
+            return CreatedAtAction(nameof(GetAnotaciones), new { id }, new
+            {
+                nueva.anotacion_id,
+                nueva.cliente_id,
+                nueva.origen,
+                nueva.anotacion,
+                nueva.fecha_creacion,
+            });
+        }
+
+        // ============================
+        // DELETE: api/Cliente/anotaciones/{anotacionId}
+        // Solo ADMIN puede eliminar anotaciones
+        // ============================
+        [Authorize(Roles = "ADMIN")]
+        [HttpDelete("anotaciones/{anotacionId}")]
+        public async Task<IActionResult> DeleteAnotacion(int anotacionId)
+        {
+            var anotacion = await _context.ClienteAnotaciones.FindAsync(anotacionId);
+            if (anotacion == null)
+                return NotFound("Anotación no encontrada");
+
+            _context.ClienteAnotaciones.Remove(anotacion);
+            await _context.SaveChangesAsync();
+            return NoContent();
+        }
+    }
+
+    public class AnotacionCreateDTO
+    {
+        public string anotacion { get; set; } = string.Empty;
+        public string? origen { get; set; }
     }
 }
