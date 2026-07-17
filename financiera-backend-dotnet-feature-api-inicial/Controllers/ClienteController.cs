@@ -60,6 +60,10 @@ namespace ApiEjemplo.Controllers
                     municipio        = c.municipio,        // MONEYPINE-FIX: exponer municipio
                     ciudad           = c.ciudad,           // MONEYPINE-FIX: exponer ciudad
                     estado_domicilio = c.estado_domicilio, // MONEYPINE-FIX: exponer estado_domicilio
+                    num_ext          = c.num_ext,
+                    calle            = c.calle,
+                    latitud          = c.latitud,
+                    longitud         = c.longitud,
                     fecha_nacimiento   = c.fecha_nacimiento,
                     curp               = c.curp,
                     rfc                = c.rfc,
@@ -82,10 +86,54 @@ namespace ApiEjemplo.Controllers
         [HttpGet("{id}")]
         public async Task<IActionResult> GetById(int id)
         {
+            // MONEYPINE-FIX: la entidad cruda no serializa Usuario ([JsonIgnore]),
+            // por lo que nombre/apellido/correo/telefono nunca llegaban al frontend.
+            // Se responde con el mismo DTO plano que el listado.
             var cliente = await _context.Clientes
                 .Include(c => c.Usuario)
-                .Include(c => c.Prestamos)
-                .FirstOrDefaultAsync(c => c.cliente_id == id);
+                .Where(c => c.cliente_id == id)
+                .Select(c => new ClienteDTO
+                {
+                    cliente_id         = c.cliente_id,
+                    clave_cliente      = c.clave_cliente ?? $"MP-{c.cliente_id.ToString().PadLeft(5, '0')}",
+                    usuario_id         = c.usuario_id,
+                    tipo_cliente       = c.tipo_cliente,
+                    ruta_vinculacion   = c.ruta_vinculacion,
+                    permitir_acceso_web= c.permitir_acceso_web,
+                    nombre_usuario     = c.Usuario != null ? c.Usuario.nombre    : null,
+                    apellido_usuario   = c.Usuario != null ? c.Usuario.apellido  : null,
+                    apellido_materno   = c.apellido_materno,
+                    apellido_paterno   = c.apellido_paterno,
+                    correo_usuario     = c.Usuario != null ? c.Usuario.correo    : null,
+                    telefono_usuario   = c.Usuario != null ? c.Usuario.telefono  : null,
+                    estado_usuario     = c.Usuario != null ? c.Usuario.estado.ToString() : null,
+                    sexo               = c.sexo,
+                    estado_civil       = c.estado_civil,
+                    lugar_nacimiento   = c.lugar_nacimiento,
+                    no_dependientes    = c.no_dependientes,
+                    telefono_oficina   = c.telefono_oficina,
+                    telefono_particular= c.telefono_particular,
+                    direccion          = c.direccion,
+                    colonia            = c.colonia,
+                    cp                 = c.cp,
+                    municipio          = c.municipio,
+                    ciudad             = c.ciudad,
+                    estado_domicilio   = c.estado_domicilio,
+                    num_ext            = c.num_ext,
+                    calle              = c.calle,
+                    latitud            = c.latitud,
+                    longitud           = c.longitud,
+                    fecha_nacimiento   = c.fecha_nacimiento,
+                    curp               = c.curp,
+                    rfc                = c.rfc,
+                    empresa_nombre     = c.empresa_nombre,
+                    empresa_rfc        = c.empresa_rfc,
+                    empresa_correo     = c.empresa_correo,
+                    empresa_telefono_oficina    = c.empresa_telefono_oficina,
+                    empresa_telefono_particular = c.empresa_telefono_particular,
+                    empresa_telefono_celular    = c.empresa_telefono_celular,
+                })
+                .FirstOrDefaultAsync();
 
             if (cliente == null)
                 return NotFound("Cliente no encontrado");
@@ -161,6 +209,7 @@ namespace ApiEjemplo.Controllers
                 cliente.permitir_acceso_web = dto.permitir_acceso_web.Value;
 
             cliente.apellido_materno = dto.apellido_materno ?? cliente.apellido_materno;
+            cliente.apellido_paterno = dto.apellido_paterno ?? cliente.apellido_paterno;
             cliente.sexo = dto.sexo ?? cliente.sexo;
             cliente.estado_civil = dto.estado_civil ?? cliente.estado_civil;
             cliente.lugar_nacimiento = dto.lugar_nacimiento ?? cliente.lugar_nacimiento;
@@ -175,6 +224,10 @@ namespace ApiEjemplo.Controllers
             cliente.estado_domicilio = dto.estado_domicilio ?? cliente.estado_domicilio;
             cliente.municipio        = dto.municipio        ?? cliente.municipio;
             cliente.num_ext          = dto.num_ext          ?? cliente.num_ext;
+            cliente.ciudad           = dto.ciudad           ?? cliente.ciudad;
+            cliente.calle            = dto.calle            ?? cliente.calle;
+            cliente.latitud          = dto.latitud          ?? cliente.latitud;
+            cliente.longitud         = dto.longitud         ?? cliente.longitud;
             cliente.fecha_nacimiento = dto.fecha_nacimiento ?? cliente.fecha_nacimiento;
             cliente.curp = dto.curp ?? cliente.curp;
             cliente.rfc = dto.rfc ?? cliente.rfc;

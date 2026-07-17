@@ -15,6 +15,7 @@ namespace ApiEjemplo.DTOs.Cliente
         public bool? permitir_acceso_web { get; set; }
 
         public string? apellido_materno { get; set; }
+        public string? apellido_paterno { get; set; }
         public string? sexo { get; set; }
         public string? estado_civil { get; set; }
         public string? lugar_nacimiento { get; set; }
@@ -28,6 +29,10 @@ namespace ApiEjemplo.DTOs.Cliente
         public string? estado_domicilio { get; set; }
         public string? municipio { get; set; }
         public string? num_ext { get; set; }
+        public string? ciudad { get; set; }
+        public string? calle { get; set; }
+        public double? latitud { get; set; }
+        public double? longitud { get; set; }
         public DateTime? fecha_nacimiento { get; set; }
         public string? curp { get; set; }
         public string? rfc { get; set; }
