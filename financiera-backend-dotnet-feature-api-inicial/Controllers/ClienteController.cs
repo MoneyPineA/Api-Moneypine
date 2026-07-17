@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ApiEjemplo.Data;
@@ -223,8 +224,11 @@ namespace ApiEjemplo.Controllers
 
         // ============================
         // DELETE: api/Cliente/5
-        // Elimina un cliente
+        // Elimina un cliente — SOLO ADMIN.
+        // La regla de negocio se valida aquí (no en el frontend):
+        // un cliente con créditos ACTIVO o ATRASADO no puede eliminarse.
         // ============================
+        [Authorize(Roles = "ADMIN")]
         [HttpDelete("{id}")]
         public async Task<IActionResult> Delete(int id)
         {
@@ -232,6 +236,17 @@ namespace ApiEjemplo.Controllers
 
             if (cliente == null)
                 return NotFound("Cliente no encontrado");
+
+            var creditosActivos = await _context.Prestamos
+                .CountAsync(p => p.cliente_id == id &&
+                    (p.estatus == EstatusPrestamo.ACTIVO || p.estatus == EstatusPrestamo.ATRASADO));
+
+            if (creditosActivos > 0)
+                return Conflict(new
+                {
+                    message = $"No se puede eliminar: el cliente tiene {creditosActivos} crédito(s) activo(s) o atrasado(s).",
+                    creditos_activos = creditosActivos,
+                });
 
             _context.Clientes.Remove(cliente);
             await _context.SaveChangesAsync();
