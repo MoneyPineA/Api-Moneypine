@@ -65,5 +65,19 @@ namespace ApiEjemplo.Controllers
                 gasto.monto,
             });
         }
+
+        // DELETE /api/GastoReciente/{id} — eliminar un gasto registrado por error o que ya no aplica
+        [HttpDelete("{id:int}")]
+        [Authorize]
+        public async Task<IActionResult> Delete(int id)
+        {
+            var gasto = await _db.GastosRecientes.FindAsync(id);
+            if (gasto == null) return NotFound();
+
+            _db.GastosRecientes.Remove(gasto);
+            await _db.SaveChangesAsync();
+
+            return Ok(new { message = "Gasto eliminado correctamente" });
+        }
     }
 }
