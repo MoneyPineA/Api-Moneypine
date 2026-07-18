@@ -49,6 +49,9 @@ namespace ApiEjemplo.Data
         // Lista negra persistida en BD (criterio: mora > 130 días y > $1500)
         public DbSet<ListaNegra>        ListasNegras       { get; set; }
 
+        // Gastos del banco (Contabilidad/Rendimientos — "Gastos Recientes")
+        public DbSet<GastoReciente>     GastosRecientes    { get; set; }
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
