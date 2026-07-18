@@ -40,6 +40,15 @@ namespace ApiEjemplo.Models
         public string? num_ext { get; set; }
         // MONEYPINE-FIX: calle separada — columna agregada a Railway via ALTER TABLE
         public string? calle { get; set; }
+        // MONEYPINE-FIX: columnas que existen en Railway (ALTER TABLE del sistema anterior)
+        // pero faltaban en el modelo — la migración que las acompaña NO las crea (ver AddClienteAnotacion)
+        public string? numero_int { get; set; }
+        public string? ref_calle1 { get; set; }
+        public string? ref_calle2 { get; set; }
+        public string? ref_adicional { get; set; }
+        public string? tel_celular { get; set; }
+        public DateTime? fec_alta { get; set; }
+        public DateTime? fec_baja { get; set; }
         public double? latitud { get; set; }
         public double? longitud { get; set; }
         public DateTime? fecha_nacimiento { get; set; }

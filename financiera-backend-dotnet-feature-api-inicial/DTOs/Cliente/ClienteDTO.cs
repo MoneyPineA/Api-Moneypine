@@ -33,6 +33,17 @@ namespace ApiEjemplo.DTOs.Cliente
         public string? municipio           { get; set; }
         public string? ciudad              { get; set; }
         public string? estado_domicilio    { get; set; }
+        public string? num_ext             { get; set; }
+        public string? calle               { get; set; }
+        public string? numero_int          { get; set; }
+        public string? ref_calle1          { get; set; }
+        public string? ref_calle2          { get; set; }
+        public string? ref_adicional       { get; set; }
+        public string? tel_celular         { get; set; }
+        public DateTime? fec_alta          { get; set; }
+        public DateTime? fec_baja          { get; set; }
+        public double? latitud             { get; set; }
+        public double? longitud            { get; set; }
         public DateTime? fecha_nacimiento  { get; set; }
         public string? curp                { get; set; }
         public string? rfc                 { get; set; }

@@ -3,6 +3,7 @@ using ApiEjemplo.DTOs;
 using ApiEjemplo.Enums;
 using ApiEjemplo.Models;
 using ApiEjemplo.Security;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -137,6 +138,37 @@ namespace ApiEjemplo.Controllers
             {
                 access_token = newAccessToken,
                 expires_in = 300
+            });
+        }
+
+        // ==========================
+        // GET: api/auth/me
+        // Devuelve el usuario autenticado con su rol leído de la BD
+        // (no del token ni de localStorage) — fuente de verdad para el frontend.
+        // ==========================
+        [Authorize]
+        [HttpGet("me")]
+        public async Task<IActionResult> Me()
+        {
+            var idClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!int.TryParse(idClaim, out var usuarioId))
+                return Unauthorized("Token sin identificador de usuario");
+
+            var usuario = await _context.Usuarios.FindAsync(usuarioId);
+            if (usuario == null)
+                return Unauthorized("Usuario no encontrado");
+
+            if (usuario.estado != EstadoUsuario.ACTIVO)
+                return StatusCode(403, "Cuenta inactiva o bloqueada");
+
+            return Ok(new
+            {
+                usuario_id = usuario.usuario_id,
+                correo     = usuario.correo,
+                nombre     = usuario.nombre,
+                apellido   = usuario.apellido,
+                rol        = usuario.rol.ToString(),
+                estado     = usuario.estado.ToString(),
             });
         }
 

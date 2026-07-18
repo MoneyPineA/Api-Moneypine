@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ApiEjemplo.Data;
@@ -59,6 +60,17 @@ namespace ApiEjemplo.Controllers
                     municipio        = c.municipio,        // MONEYPINE-FIX: exponer municipio
                     ciudad           = c.ciudad,           // MONEYPINE-FIX: exponer ciudad
                     estado_domicilio = c.estado_domicilio, // MONEYPINE-FIX: exponer estado_domicilio
+                    num_ext          = c.num_ext,
+                    calle            = c.calle,
+                    numero_int       = c.numero_int,
+                    ref_calle1       = c.ref_calle1,
+                    ref_calle2       = c.ref_calle2,
+                    ref_adicional    = c.ref_adicional,
+                    tel_celular      = c.tel_celular,
+                    fec_alta         = c.fec_alta,
+                    fec_baja         = c.fec_baja,
+                    latitud          = c.latitud,
+                    longitud         = c.longitud,
                     fecha_nacimiento   = c.fecha_nacimiento,
                     curp               = c.curp,
                     rfc                = c.rfc,
@@ -81,10 +93,61 @@ namespace ApiEjemplo.Controllers
         [HttpGet("{id}")]
         public async Task<IActionResult> GetById(int id)
         {
+            // MONEYPINE-FIX: la entidad cruda no serializa Usuario ([JsonIgnore]),
+            // por lo que nombre/apellido/correo/telefono nunca llegaban al frontend.
+            // Se responde con el mismo DTO plano que el listado.
             var cliente = await _context.Clientes
                 .Include(c => c.Usuario)
-                .Include(c => c.Prestamos)
-                .FirstOrDefaultAsync(c => c.cliente_id == id);
+                .Where(c => c.cliente_id == id)
+                .Select(c => new ClienteDTO
+                {
+                    cliente_id         = c.cliente_id,
+                    clave_cliente      = c.clave_cliente ?? $"MP-{c.cliente_id.ToString().PadLeft(5, '0')}",
+                    usuario_id         = c.usuario_id,
+                    tipo_cliente       = c.tipo_cliente,
+                    ruta_vinculacion   = c.ruta_vinculacion,
+                    permitir_acceso_web= c.permitir_acceso_web,
+                    nombre_usuario     = c.Usuario != null ? c.Usuario.nombre    : null,
+                    apellido_usuario   = c.Usuario != null ? c.Usuario.apellido  : null,
+                    apellido_materno   = c.apellido_materno,
+                    apellido_paterno   = c.apellido_paterno,
+                    correo_usuario     = c.Usuario != null ? c.Usuario.correo    : null,
+                    telefono_usuario   = c.Usuario != null ? c.Usuario.telefono  : null,
+                    estado_usuario     = c.Usuario != null ? c.Usuario.estado.ToString() : null,
+                    sexo               = c.sexo,
+                    estado_civil       = c.estado_civil,
+                    lugar_nacimiento   = c.lugar_nacimiento,
+                    no_dependientes    = c.no_dependientes,
+                    telefono_oficina   = c.telefono_oficina,
+                    telefono_particular= c.telefono_particular,
+                    direccion          = c.direccion,
+                    colonia            = c.colonia,
+                    cp                 = c.cp,
+                    municipio          = c.municipio,
+                    ciudad             = c.ciudad,
+                    estado_domicilio   = c.estado_domicilio,
+                    num_ext            = c.num_ext,
+                    calle              = c.calle,
+                    numero_int         = c.numero_int,
+                    ref_calle1         = c.ref_calle1,
+                    ref_calle2         = c.ref_calle2,
+                    ref_adicional      = c.ref_adicional,
+                    tel_celular        = c.tel_celular,
+                    fec_alta           = c.fec_alta,
+                    fec_baja           = c.fec_baja,
+                    latitud            = c.latitud,
+                    longitud           = c.longitud,
+                    fecha_nacimiento   = c.fecha_nacimiento,
+                    curp               = c.curp,
+                    rfc                = c.rfc,
+                    empresa_nombre     = c.empresa_nombre,
+                    empresa_rfc        = c.empresa_rfc,
+                    empresa_correo     = c.empresa_correo,
+                    empresa_telefono_oficina    = c.empresa_telefono_oficina,
+                    empresa_telefono_particular = c.empresa_telefono_particular,
+                    empresa_telefono_celular    = c.empresa_telefono_celular,
+                })
+                .FirstOrDefaultAsync();
 
             if (cliente == null)
                 return NotFound("Cliente no encontrado");
@@ -160,6 +223,7 @@ namespace ApiEjemplo.Controllers
                 cliente.permitir_acceso_web = dto.permitir_acceso_web.Value;
 
             cliente.apellido_materno = dto.apellido_materno ?? cliente.apellido_materno;
+            cliente.apellido_paterno = dto.apellido_paterno ?? cliente.apellido_paterno;
             cliente.sexo = dto.sexo ?? cliente.sexo;
             cliente.estado_civil = dto.estado_civil ?? cliente.estado_civil;
             cliente.lugar_nacimiento = dto.lugar_nacimiento ?? cliente.lugar_nacimiento;
@@ -174,6 +238,15 @@ namespace ApiEjemplo.Controllers
             cliente.estado_domicilio = dto.estado_domicilio ?? cliente.estado_domicilio;
             cliente.municipio        = dto.municipio        ?? cliente.municipio;
             cliente.num_ext          = dto.num_ext          ?? cliente.num_ext;
+            cliente.ciudad           = dto.ciudad           ?? cliente.ciudad;
+            cliente.calle            = dto.calle            ?? cliente.calle;
+            cliente.numero_int       = dto.numero_int       ?? cliente.numero_int;
+            cliente.ref_calle1       = dto.ref_calle1       ?? cliente.ref_calle1;
+            cliente.ref_calle2       = dto.ref_calle2       ?? cliente.ref_calle2;
+            cliente.ref_adicional    = dto.ref_adicional    ?? cliente.ref_adicional;
+            cliente.tel_celular      = dto.tel_celular      ?? cliente.tel_celular;
+            cliente.latitud          = dto.latitud          ?? cliente.latitud;
+            cliente.longitud         = dto.longitud         ?? cliente.longitud;
             cliente.fecha_nacimiento = dto.fecha_nacimiento ?? cliente.fecha_nacimiento;
             cliente.curp = dto.curp ?? cliente.curp;
             cliente.rfc = dto.rfc ?? cliente.rfc;
@@ -223,8 +296,11 @@ namespace ApiEjemplo.Controllers
 
         // ============================
         // DELETE: api/Cliente/5
-        // Elimina un cliente
+        // Elimina un cliente — SOLO ADMIN.
+        // La regla de negocio se valida aquí (no en el frontend):
+        // un cliente con créditos ACTIVO o ATRASADO no puede eliminarse.
         // ============================
+        [Authorize(Roles = "ADMIN")]
         [HttpDelete("{id}")]
         public async Task<IActionResult> Delete(int id)
         {
@@ -232,6 +308,17 @@ namespace ApiEjemplo.Controllers
 
             if (cliente == null)
                 return NotFound("Cliente no encontrado");
+
+            var creditosActivos = await _context.Prestamos
+                .CountAsync(p => p.cliente_id == id &&
+                    (p.estatus == EstatusPrestamo.ACTIVO || p.estatus == EstatusPrestamo.ATRASADO));
+
+            if (creditosActivos > 0)
+                return Conflict(new
+                {
+                    message = $"No se puede eliminar: el cliente tiene {creditosActivos} crédito(s) activo(s) o atrasado(s).",
+                    creditos_activos = creditosActivos,
+                });
 
             _context.Clientes.Remove(cliente);
             await _context.SaveChangesAsync();
@@ -244,5 +331,97 @@ namespace ApiEjemplo.Controllers
 
             return NoContent();
         }
+
+        // ============================
+        // GET: api/Cliente/{id}/anotaciones
+        // Lista las anotaciones del cliente con el nombre del autor
+        // ============================
+        [Authorize]
+        [HttpGet("{id}/anotaciones")]
+        public async Task<IActionResult> GetAnotaciones(int id)
+        {
+            var existe = await _context.Clientes.AnyAsync(c => c.cliente_id == id);
+            if (!existe)
+                return NotFound("Cliente no encontrado");
+
+            var anotaciones = await _context.ClienteAnotaciones
+                .Where(a => a.cliente_id == id)
+                .OrderByDescending(a => a.fecha_creacion)
+                .Select(a => new
+                {
+                    a.anotacion_id,
+                    a.cliente_id,
+                    a.origen,
+                    a.anotacion,
+                    a.fecha_creacion,
+                    autor = a.Usuario != null ? $"{a.Usuario.nombre} {a.Usuario.apellido}".Trim() : null,
+                })
+                .ToListAsync();
+
+            return Ok(anotaciones);
+        }
+
+        // ============================
+        // POST: api/Cliente/{id}/anotaciones
+        // Crea una anotación; el autor se toma del JWT
+        // ============================
+        [Authorize]
+        [HttpPost("{id}/anotaciones")]
+        public async Task<IActionResult> CreateAnotacion(int id, [FromBody] AnotacionCreateDTO dto)
+        {
+            if (string.IsNullOrWhiteSpace(dto.anotacion))
+                return BadRequest("La anotación no puede estar vacía");
+
+            var existe = await _context.Clientes.AnyAsync(c => c.cliente_id == id);
+            if (!existe)
+                return NotFound("Cliente no encontrado");
+
+            var idClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            if (!int.TryParse(idClaim, out var usuarioId))
+                return Unauthorized("Token sin identificador de usuario");
+
+            var nueva = new ClienteAnotacion
+            {
+                cliente_id = id,
+                usuario_id = usuarioId,
+                origen     = string.IsNullOrWhiteSpace(dto.origen) ? "MANUAL" : dto.origen!.Trim().ToUpper(),
+                anotacion  = dto.anotacion.Trim(),
+            };
+
+            _context.ClienteAnotaciones.Add(nueva);
+            await _context.SaveChangesAsync();
+
+            return CreatedAtAction(nameof(GetAnotaciones), new { id }, new
+            {
+                nueva.anotacion_id,
+                nueva.cliente_id,
+                nueva.origen,
+                nueva.anotacion,
+                nueva.fecha_creacion,
+            });
+        }
+
+        // ============================
+        // DELETE: api/Cliente/anotaciones/{anotacionId}
+        // Solo ADMIN puede eliminar anotaciones
+        // ============================
+        [Authorize(Roles = "ADMIN")]
+        [HttpDelete("anotaciones/{anotacionId}")]
+        public async Task<IActionResult> DeleteAnotacion(int anotacionId)
+        {
+            var anotacion = await _context.ClienteAnotaciones.FindAsync(anotacionId);
+            if (anotacion == null)
+                return NotFound("Anotación no encontrada");
+
+            _context.ClienteAnotaciones.Remove(anotacion);
+            await _context.SaveChangesAsync();
+            return NoContent();
+        }
+    }
+
+    public class AnotacionCreateDTO
+    {
+        public string anotacion { get; set; } = string.Empty;
+        public string? origen { get; set; }
     }
 }

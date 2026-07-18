@@ -4,6 +4,7 @@ using ApiEjemplo.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace ApiEjemplo.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260717101520_AddFormatoDocumento")]
+    partial class AddFormatoDocumento
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -480,30 +483,6 @@ namespace ApiEjemplo.Migrations
                     b.HasIndex("usuario_id");
 
                     b.ToTable("formato_documento");
-                });
-
-            modelBuilder.Entity("ApiEjemplo.Models.GastoReciente", b =>
-                {
-                    b.Property<int>("gasto_id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("gasto_id"));
-
-                    b.Property<string>("concepto")
-                        .IsRequired()
-                        .HasMaxLength(150)
-                        .HasColumnType("varchar(150)");
-
-                    b.Property<DateTime>("fecha_gasto")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<decimal>("monto")
-                        .HasColumnType("decimal(12,2)");
-
-                    b.HasKey("gasto_id");
-
-                    b.ToTable("gastos_recientes");
                 });
 
             modelBuilder.Entity("ApiEjemplo.Models.Gerencia", b =>

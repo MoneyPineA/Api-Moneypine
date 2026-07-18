@@ -4,6 +4,7 @@ using ApiEjemplo.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace ApiEjemplo.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260717093704_AddClienteAnotacion")]
+    partial class AddClienteAnotacion
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -421,89 +424,6 @@ namespace ApiEjemplo.Migrations
                     b.HasKey("DocumentoId");
 
                     b.ToTable("documento");
-                });
-
-            modelBuilder.Entity("ApiEjemplo.Models.FormatoDocumento", b =>
-                {
-                    b.Property<int>("formato_id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("formato_id"));
-
-                    b.Property<string>("categoria")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("varchar(50)");
-
-                    b.Property<byte[]>("contenido")
-                        .IsRequired()
-                        .HasColumnType("LONGBLOB");
-
-                    b.Property<string>("descripcion")
-                        .HasMaxLength(300)
-                        .HasColumnType("varchar(300)");
-
-                    b.Property<DateTime>("fecha_subida")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<byte[]>("icono")
-                        .HasColumnType("MEDIUMBLOB");
-
-                    b.Property<string>("icono_mime")
-                        .HasMaxLength(100)
-                        .HasColumnType("varchar(100)");
-
-                    b.Property<string>("nombre")
-                        .IsRequired()
-                        .HasMaxLength(150)
-                        .HasColumnType("varchar(150)");
-
-                    b.Property<string>("nombre_archivo")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("varchar(255)");
-
-                    b.Property<long>("tamano_bytes")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("tipo_mime")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("varchar(100)");
-
-                    b.Property<int>("usuario_id")
-                        .HasColumnType("int");
-
-                    b.HasKey("formato_id");
-
-                    b.HasIndex("usuario_id");
-
-                    b.ToTable("formato_documento");
-                });
-
-            modelBuilder.Entity("ApiEjemplo.Models.GastoReciente", b =>
-                {
-                    b.Property<int>("gasto_id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("gasto_id"));
-
-                    b.Property<string>("concepto")
-                        .IsRequired()
-                        .HasMaxLength(150)
-                        .HasColumnType("varchar(150)");
-
-                    b.Property<DateTime>("fecha_gasto")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<decimal>("monto")
-                        .HasColumnType("decimal(12,2)");
-
-                    b.HasKey("gasto_id");
-
-                    b.ToTable("gastos_recientes");
                 });
 
             modelBuilder.Entity("ApiEjemplo.Models.Gerencia", b =>
@@ -1427,17 +1347,6 @@ namespace ApiEjemplo.Migrations
                     b.Navigation("Cliente");
 
                     b.Navigation("Producto");
-                });
-
-            modelBuilder.Entity("ApiEjemplo.Models.FormatoDocumento", b =>
-                {
-                    b.HasOne("ApiEjemplo.Models.Usuario", "Usuario")
-                        .WithMany()
-                        .HasForeignKey("usuario_id")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Usuario");
                 });
 
             modelBuilder.Entity("ApiEjemplo.Models.Gerencia", b =>
