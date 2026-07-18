@@ -4,6 +4,7 @@ using ApiEjemplo.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace ApiEjemplo.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260718010821_AddGastosRecientes")]
+    partial class AddGastosRecientes
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -170,12 +173,6 @@ namespace ApiEjemplo.Migrations
                     b.Property<string>("estado_domicilio")
                         .HasColumnType("longtext");
 
-                    b.Property<DateTime?>("fec_alta")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<DateTime?>("fec_baja")
-                        .HasColumnType("datetime(6)");
-
                     b.Property<DateTime?>("fecha_nacimiento")
                         .HasColumnType("datetime(6)");
 
@@ -197,20 +194,8 @@ namespace ApiEjemplo.Migrations
                     b.Property<string>("num_ext")
                         .HasColumnType("longtext");
 
-                    b.Property<string>("numero_int")
-                        .HasColumnType("longtext");
-
                     b.Property<bool>("permitir_acceso_web")
                         .HasColumnType("tinyint(1)");
-
-                    b.Property<string>("ref_adicional")
-                        .HasColumnType("longtext");
-
-                    b.Property<string>("ref_calle1")
-                        .HasColumnType("longtext");
-
-                    b.Property<string>("ref_calle2")
-                        .HasColumnType("longtext");
 
                     b.Property<string>("rfc")
                         .HasColumnType("longtext");
@@ -219,9 +204,6 @@ namespace ApiEjemplo.Migrations
                         .HasColumnType("longtext");
 
                     b.Property<string>("sexo")
-                        .HasColumnType("longtext");
-
-                    b.Property<string>("tel_celular")
                         .HasColumnType("longtext");
 
                     b.Property<string>("telefono_oficina")
@@ -242,41 +224,6 @@ namespace ApiEjemplo.Migrations
                         .IsUnique();
 
                     b.ToTable("cliente");
-                });
-
-            modelBuilder.Entity("ApiEjemplo.Models.ClienteAnotacion", b =>
-                {
-                    b.Property<int>("anotacion_id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("anotacion_id"));
-
-                    b.Property<string>("anotacion")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
-                    b.Property<int>("cliente_id")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime>("fecha_creacion")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("origen")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("varchar(50)");
-
-                    b.Property<int>("usuario_id")
-                        .HasColumnType("int");
-
-                    b.HasKey("anotacion_id");
-
-                    b.HasIndex("cliente_id");
-
-                    b.HasIndex("usuario_id");
-
-                    b.ToTable("cliente_anotacion");
                 });
 
             modelBuilder.Entity("ApiEjemplo.Models.ConceptoSistema", b =>
@@ -421,65 +368,6 @@ namespace ApiEjemplo.Migrations
                     b.HasKey("DocumentoId");
 
                     b.ToTable("documento");
-                });
-
-            modelBuilder.Entity("ApiEjemplo.Models.FormatoDocumento", b =>
-                {
-                    b.Property<int>("formato_id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("formato_id"));
-
-                    b.Property<string>("categoria")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("varchar(50)");
-
-                    b.Property<byte[]>("contenido")
-                        .IsRequired()
-                        .HasColumnType("LONGBLOB");
-
-                    b.Property<string>("descripcion")
-                        .HasMaxLength(300)
-                        .HasColumnType("varchar(300)");
-
-                    b.Property<DateTime>("fecha_subida")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<byte[]>("icono")
-                        .HasColumnType("MEDIUMBLOB");
-
-                    b.Property<string>("icono_mime")
-                        .HasMaxLength(100)
-                        .HasColumnType("varchar(100)");
-
-                    b.Property<string>("nombre")
-                        .IsRequired()
-                        .HasMaxLength(150)
-                        .HasColumnType("varchar(150)");
-
-                    b.Property<string>("nombre_archivo")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("varchar(255)");
-
-                    b.Property<long>("tamano_bytes")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("tipo_mime")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("varchar(100)");
-
-                    b.Property<int>("usuario_id")
-                        .HasColumnType("int");
-
-                    b.HasKey("formato_id");
-
-                    b.HasIndex("usuario_id");
-
-                    b.ToTable("formato_documento");
                 });
 
             modelBuilder.Entity("ApiEjemplo.Models.GastoReciente", b =>
@@ -1391,25 +1279,6 @@ namespace ApiEjemplo.Migrations
                     b.Navigation("Usuario");
                 });
 
-            modelBuilder.Entity("ApiEjemplo.Models.ClienteAnotacion", b =>
-                {
-                    b.HasOne("ApiEjemplo.Models.Cliente", "Cliente")
-                        .WithMany()
-                        .HasForeignKey("cliente_id")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("ApiEjemplo.Models.Usuario", "Usuario")
-                        .WithMany()
-                        .HasForeignKey("usuario_id")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Cliente");
-
-                    b.Navigation("Usuario");
-                });
-
             modelBuilder.Entity("ApiEjemplo.Models.CuentaAhorro", b =>
                 {
                     b.HasOne("ApiEjemplo.Models.Cliente", "Cliente")
@@ -1427,17 +1296,6 @@ namespace ApiEjemplo.Migrations
                     b.Navigation("Cliente");
 
                     b.Navigation("Producto");
-                });
-
-            modelBuilder.Entity("ApiEjemplo.Models.FormatoDocumento", b =>
-                {
-                    b.HasOne("ApiEjemplo.Models.Usuario", "Usuario")
-                        .WithMany()
-                        .HasForeignKey("usuario_id")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Usuario");
                 });
 
             modelBuilder.Entity("ApiEjemplo.Models.Gerencia", b =>
