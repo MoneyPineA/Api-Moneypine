@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ApiEjemplo.Data;
@@ -16,6 +17,12 @@ namespace ApiEjemplo.Controllers
         public string? administrado_en { get; set; }
         // MONEYPINE-FIX: fecha primer pago capturada en modal de apertura (opcional)
         public DateTime? fecha_apertura { get; set; }
+    }
+
+    // MONEYPINE-FIX: DTO para el body de POST /condonar-mora
+    public class CondonarMoraDto
+    {
+        public string motivo { get; set; } = string.Empty;
     }
 
     [ApiController]
@@ -1143,6 +1150,73 @@ namespace ApiEjemplo.Controllers
             }).ToList();
 
             return Ok(result);
+        }
+
+        // =====================================================
+        // POST: api/Prestamo/{id}/condonar-mora
+        // Condona (perdona) el interes moratorio acumulado de TODOS los
+        // periodos de un credito — capital e interes normal NO se tocan.
+        // Solo ADMIN. Queda registrado en ActivityLog + Notification con
+        // quien lo autorizo, el motivo y el monto exacto perdonado.
+        // =====================================================
+        [Authorize(Roles = "ADMIN")]
+        [HttpPost("{id}/condonar-mora")]
+        public async Task<IActionResult> CondonarMora(int id, [FromBody] CondonarMoraDto dto)
+        {
+            if (string.IsNullOrWhiteSpace(dto.motivo))
+                return BadRequest("El motivo de la condonación es obligatorio");
+
+            var prestamo = await _context.Prestamos.FindAsync(id);
+            if (prestamo == null)
+                return NotFound("Crédito no encontrado");
+
+            var periodosConMora = await _context.PeriodosAmortizacion
+                .Where(p => p.prestamo_id == id && (p.interes_moratorio > 0 || p.dias_moratorio > 0))
+                .ToListAsync();
+
+            if (periodosConMora.Count == 0)
+                return Ok(new
+                {
+                    message = "El crédito no tiene mora pendiente por condonar.",
+                    periodos_afectados = 0,
+                    monto_condonado = 0m,
+                });
+
+            var montoCondonado = periodosConMora.Sum(p => p.interes_moratorio);
+
+            foreach (var periodo in periodosConMora)
+            {
+                periodo.interes_moratorio = 0m;
+                periodo.dias_moratorio    = 0;
+            }
+
+            await _context.SaveChangesAsync();
+
+            var idClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            int.TryParse(idClaim, out var usuarioId);
+
+            var descripcion = $"Mora condonada en crédito #{id}: ${montoCondonado:N2} " +
+                               $"({periodosConMora.Count} periodo(s)). Motivo: {dto.motivo.Trim()}";
+
+            await _activityService.CreateActivity(
+                ActivityType.MORA_CONDONADA,
+                prestamo.cliente_id,
+                montoCondonado,
+                NotificationLevel.NEUTRAL,
+                descripcion,
+                usuarioId == 0 ? null : usuarioId
+            );
+
+            await _notificationService.CreateNotification(1, descripcion, NotificationLevel.NEUTRAL);
+
+            return Ok(new
+            {
+                message = "Mora condonada correctamente.",
+                prestamo_id = id,
+                cliente_id = prestamo.cliente_id,
+                periodos_afectados = periodosConMora.Count,
+                monto_condonado = montoCondonado,
+            });
         }
     }
 }
