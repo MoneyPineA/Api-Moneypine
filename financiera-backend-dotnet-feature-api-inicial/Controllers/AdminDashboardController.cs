@@ -150,7 +150,10 @@ namespace ApiEjemplo.Controllers
                 .Join(_context.Prestamos,
                       pa => pa.prestamo_id,
                       pr => pr.prestamo_id,
-                      (pa, pr) => new { pa.fecha_vencimiento, pr.mora_diaria })
+                      (pa, pr) => new {
+                          pa.fecha_vencimiento, pr.mora_diaria,
+                          pa.abono_capital, pa.interes_normal, pa.interes_iva,
+                      })
                 .ToListAsync();
 
             decimal moratoriosGenerados = periodsOverdue.Sum(x =>
@@ -158,6 +161,13 @@ namespace ApiEjemplo.Controllers
                 int dias = Math.Max(0, (hoy - x.fecha_vencimiento.Date).Days);
                 return Math.Round(x.mora_diaria * dias, 2);
             });
+
+            // MONEYPINE-FIX: desglose del saldo vencido para la grafica de "Informacion en
+            // tiempo real" (dona anidada) — capital/interes/IVA pendientes de los periodos
+            // realmente vencidos (RETRASO), no el saldo_actual del prestamo completo.
+            decimal capitalVencido = periodsOverdue.Sum(x => x.abono_capital);
+            decimal interesVencido = periodsOverdue.Sum(x => x.interes_normal);
+            decimal ivaVencido     = periodsOverdue.Sum(x => x.interes_iva);
 
             return Ok(new
             {
@@ -168,7 +178,10 @@ namespace ApiEjemplo.Controllers
                 totalCartera        = activos.Sum(p => p.saldo_actual) + atrasados.Sum(p => p.saldo_actual), // MONEYPINE-FIX: usa saldo_actual, no capital original
                 carteraCorriente    = activos.Sum(p => p.saldo_actual),
                 saldoEnAtraso       = atrasados.Sum(p => p.saldo_actual),
-                moratoriosGenerados
+                moratoriosGenerados,
+                capitalVencido,
+                interesVencido,
+                ivaVencido,
             });
         }
 
