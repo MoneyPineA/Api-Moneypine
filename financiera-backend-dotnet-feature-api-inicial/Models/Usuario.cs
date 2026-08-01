@@ -33,5 +33,12 @@ namespace ApiEjemplo.Models
         // ACTIVO | INACTIVO | BLOQUEADO
         
         public DateTime fecha_registro { get; set; } = DateTime.UtcNow;
+
+        // MONEYPINE-FIX: presencia (Reportes/Trabajadores conectados) — actualizados por
+        // PresenceTrackingMiddleware en cada request autenticado.
+        public DateTime? ultima_actividad { get; set; }
+
+        [MaxLength(255)]
+        public string? ultimo_user_agent { get; set; }
     }
 }
