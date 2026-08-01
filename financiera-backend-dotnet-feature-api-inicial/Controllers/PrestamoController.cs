@@ -1086,6 +1086,44 @@ namespace ApiEjemplo.Controllers
         }
 
         // =====================================================
+        // GET: api/Prestamo/desglose-vencido
+        // MONEYPINE-FIX: capital/interes/IVA/mora vencidos POR credito (no un total global),
+        // calculados sobre los periodos realmente vencidos (RETRASO). Permite que la pantalla
+        // de Valor de Cartera arme el desglose de la dona para CUALQUIER combinacion de filtros
+        // (cobrador, forma de pago) recalculando en el cliente, sin volver a llamar al backend
+        // por cada cambio de filtro ni hacer una llamada por credito (N+1).
+        // =====================================================
+        [HttpGet("desglose-vencido")]
+        public async Task<IActionResult> GetDesgloseVencido()
+        {
+            var hoy = DateTime.UtcNow.Date;
+
+            var periodsOverdue = await _context.PeriodosAmortizacion
+                .Where(pa => pa.estado_pago == 1 && pa.fecha_vencimiento <= hoy)
+                .Join(_context.Prestamos,
+                      pa => pa.prestamo_id,
+                      pr => pr.prestamo_id,
+                      (pa, pr) => new {
+                          pa.prestamo_id, pa.fecha_vencimiento, pr.mora_diaria,
+                          pa.abono_capital, pa.interes_normal, pa.interes_iva,
+                      })
+                .ToListAsync();
+
+            var result = periodsOverdue
+                .GroupBy(x => x.prestamo_id)
+                .Select(g => new
+                {
+                    prestamo_id     = g.Key,
+                    capital_vencido = g.Sum(x => x.abono_capital),
+                    interes_vencido = g.Sum(x => x.interes_normal),
+                    iva_vencido     = g.Sum(x => x.interes_iva),
+                    mora_vencida    = g.Sum(x => Math.Round(x.mora_diaria * Math.Max(0, (hoy - x.fecha_vencimiento.Date).Days), 2)),
+                });
+
+            return Ok(result);
+        }
+
+        // =====================================================
         // GET: api/Prestamo/comisiones
         // Devuelve préstamos con comisión calculada por asesor
         // =====================================================
