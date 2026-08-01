@@ -185,6 +185,95 @@ namespace ApiEjemplo.Controllers
             });
         }
 
+        // =====================================================
+        // GET: api/admin/dashboard/trabajadores-conectados
+        // MONEYPINE-FIX: presencia real (Reportes/Trabajadores conectados). El estado se deriva
+        // de ultima_actividad (actualizada por PresenceTrackingMiddleware en cada request
+        // autenticado) y de si el usuario tiene al menos un refresh_token vigente y no revocado.
+        // Nota: la presencia se rastrea por CUENTA (usuario_id), no por sesion/dispositivo — si
+        // varias personas comparten un mismo usuario, solo se ve una tarjeta con la actividad
+        // mas reciente entre ellas.
+        // =====================================================
+        [Authorize(Roles = "ADMIN")]
+        [HttpGet("trabajadores-conectados")]
+        public async Task<IActionResult> GetTrabajadoresConectados()
+        {
+            var hoy = DateTime.UtcNow;
+
+            var usuarios = await _context.Usuarios
+                .Where(u => u.rol != RolUsuario.CLIENTE)
+                .ToListAsync();
+
+            var ubicacionPorUsuario = (await _context.Rutas
+                    .Where(r => r.asesor_id != null)
+                    .Select(r => new { r.asesor_id, r.nombre })
+                    .ToListAsync())
+                .GroupBy(r => r.asesor_id!.Value)
+                .ToDictionary(g => g.Key, g => g.First().nombre);
+
+            var tokenPorUsuario = (await _context.RefreshTokens
+                    .Where(t => !t.IsRevoked && t.ExpirationDate > hoy)
+                    .GroupBy(t => t.UsuarioId)
+                    .Select(g => new { usuario_id = g.Key, conectado_desde = g.Max(t => t.CreatedAt) })
+                    .ToListAsync())
+                .ToDictionary(t => t.usuario_id, t => t.conectado_desde);
+
+            var result = usuarios.Select(u =>
+            {
+                var tieneSesion = tokenPorUsuario.TryGetValue(u.usuario_id, out var conectadoDesde);
+                var minutos = u.ultima_actividad.HasValue ? (hoy - u.ultima_actividad.Value).TotalMinutes : double.MaxValue;
+
+                string estado;
+                if (!tieneSesion || minutos > 15) estado = "offline";
+                else if (minutos <= 2) estado = "online";
+                else estado = "away";
+
+                int orden = estado == "online" ? 0 : estado == "away" ? 1 : 2;
+                var nombreCompleto = $"{u.nombre} {u.apellido}".Trim();
+
+                return new
+                {
+                    usuario_id      = u.usuario_id,
+                    nombre          = nombreCompleto,
+                    rol             = u.rol.ToString(),
+                    estado,
+                    conectado_desde = estado == "offline" ? (DateTime?)null : conectadoDesde,
+                    ubicacion       = ubicacionPorUsuario.GetValueOrDefault(u.usuario_id),
+                    dispositivo     = estado == "offline" ? null : ParseDispositivo(u.ultimo_user_agent),
+                    orden,
+                };
+            })
+            .OrderBy(x => x.orden).ThenBy(x => x.nombre)
+            .Select(x => new { x.usuario_id, x.nombre, x.rol, x.estado, x.conectado_desde, x.ubicacion, x.dispositivo })
+            .ToList();
+
+            return Ok(result);
+        }
+
+        // Interpretacion simple del User-Agent para mostrar "Chrome / Windows", "App móvil / Android", etc.
+        private static string? ParseDispositivo(string? userAgent)
+        {
+            if (string.IsNullOrWhiteSpace(userAgent)) return null;
+            var ua = userAgent.ToLowerInvariant();
+
+            string so = ua.Contains("android") ? "Android"
+                : ua.Contains("iphone") || ua.Contains("ipad") || ua.Contains("ios") ? "iOS"
+                : ua.Contains("windows") ? "Windows"
+                : ua.Contains("mac os") || ua.Contains("macintosh") ? "macOS"
+                : ua.Contains("linux") ? "Linux"
+                : "—";
+
+            bool esMovil = ua.Contains("mobile") || ua.Contains("android") || ua.Contains("iphone");
+
+            string navegador = ua.Contains("edg/") ? "Edge"
+                : ua.Contains("chrome/") ? "Chrome"
+                : ua.Contains("firefox/") ? "Firefox"
+                : ua.Contains("safari/") && !ua.Contains("chrome") ? "Safari"
+                : "Navegador";
+
+            return esMovil ? $"App móvil / {so}" : $"{navegador} / {so}";
+        }
+
         [Authorize(Roles = "ADMIN")]
         [HttpGet("financial-summary")]
         public async Task<IActionResult> GetFinancialSummary()

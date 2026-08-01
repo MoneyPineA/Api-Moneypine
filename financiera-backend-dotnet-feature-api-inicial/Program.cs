@@ -1,4 +1,5 @@
 using ApiEjemplo.Data;
+using ApiEjemplo.Middleware;
 using ApiEjemplo.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
@@ -191,6 +192,9 @@ app.UseCors("AllowFrontend");
 // ORDEN IMPORTANTE
 app.UseAuthentication();
 app.UseAuthorization();
+
+// MONEYPINE-FIX: registra la actividad del usuario autenticado (Reportes/Trabajadores conectados)
+app.UseMiddleware<PresenceTrackingMiddleware>();
 
 // Habilitar Controllers
 app.MapControllers();
