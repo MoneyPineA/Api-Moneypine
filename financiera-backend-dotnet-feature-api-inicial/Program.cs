@@ -112,6 +112,11 @@ builder.Services.AddScoped<ListaNegraService>();
 // MONEYPINE-FIX: cron job diario — reporta automáticamente a buró los créditos con mora >= 90 días
 builder.Services.AddHostedService<BuroAutoReporteService>();
 
+// MONEYPINE-FIX: cron job diario — recalcula el estatus (ACTIVO/ATRASADO/LIQUIDADO)
+// de todos los préstamos ACTIVO, para que un vencimiento no se quede "invisible"
+// en la BD si nadie toca ese crédito el mismo día que vence.
+builder.Services.AddHostedService<EstatusPrestamoSweepService>();
+
 // Swagger
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
