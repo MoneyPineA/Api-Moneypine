@@ -7,7 +7,9 @@ public class PrestamoCreateDTO
     public decimal monto { get; set; }
     public decimal tasa_interes { get; set; }
     public int plazo_meses { get; set; }
-    public DateTime fecha_inicio { get; set; }
+    // MONEYPINE-FIX: nullable — distingue "el admin capturo la fecha del primer
+    // pago" (se respeta tal cual) de "no la mando" (se calcula por forma de pago)
+    public DateTime? fecha_inicio { get; set; }
     public int dias_gracia { get; set; }
     public DateTime? fecha_creacion { get; set; }
     public FormasPago forma_pago { get; set; } = FormasPago.MENSUAL;

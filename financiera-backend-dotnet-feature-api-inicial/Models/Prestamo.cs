@@ -49,6 +49,13 @@ namespace ApiEjemplo.Models
 
         public DateTime fecha_creacion { get; set; }
 
+        // MONEYPINE-FIX: true cuando el admin capturo la fecha del primer pago
+        // explicitamente al crear la solicitud. Al aprobar se respeta tal cual;
+        // si es false, la aprobacion usa el dia de apertura como ancla.
+        // Antes esto se "adivinaba" comparando contra el autocalculo, lo que
+        // daba falsos positivos en creditos no mensuales.
+        public bool fecha_inicio_manual { get; set; } = false;
+
         // Forma de pago (ENUM)
         [Required]
         public FormasPago forma_pago { get; set; } = FormasPago.MENSUAL;

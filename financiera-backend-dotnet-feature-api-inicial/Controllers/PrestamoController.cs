@@ -130,13 +130,17 @@ namespace ApiEjemplo.Controllers
             };
             bool esMonthlyApro = freqDaysApro == 0;
 
-            // Valor que hubiera calculado el POST automáticamente (sin edición manual)
+            // MONEYPINE-FIX: antes esto se "adivinaba" comparando fecha_inicio
+            // contra el autocalculo; en creditos no mensuales daba falso positivo
+            // (el POST guardaba +1 mes y el autocalculo esperaba +7/+15 dias).
+            // Ahora el dato es explicito: fecha_inicio_manual lo marca quien la
+            // captura, sea en la solicitud o al editar el credito.
             DateTime autoCalcFechaInicio = esMonthlyApro
                 ? prestamo.fecha_creacion.AddMonths(1)
                 : prestamo.fecha_creacion.AddDays(freqDaysApro);
 
-            // Si la diferencia con el auto-calc supera 1 día → fue editada a mano via PUT/CreditoDetalle
             bool fechaManualmenteFijada =
+                prestamo.fecha_inicio_manual ||
                 Math.Abs((prestamo.fecha_inicio - autoCalcFechaInicio).TotalDays) > 1.0;
 
             DateTime fechaBase;
@@ -504,11 +508,39 @@ namespace ApiEjemplo.Controllers
             decimal pagoMes        = _pagoBruto % 1 > 0.001m ? Math.Ceiling(_pagoBruto) : _pagoBruto;
             decimal montoTotal     = pagoMes * dto.plazo_meses;
 
-            DateTime fechaInicio =
-                fechaCreacion.AddMonths(1);
+            // ================================================================
+            // MONEYPINE-FIX: fecha del PRIMER PAGO
+            //
+            // Antes era SIEMPRE fechaCreacion.AddMonths(1), sin importar la
+            // forma de pago: un credito SEMANAL quedaba con su primer pago a
+            // un mes. Ademas ese valor no coincidia con el autocalculo que hace
+            // /aprobar (que si usa la frecuencia real), por lo que la aprobacion
+            // lo interpretaba como "editado a mano" y lo respetaba.
+            //
+            // Ahora: si el admin la captura en la solicitud se respeta tal cual
+            // (y se marca con fecha_inicio_manual); si no, se calcula con la
+            // frecuencia real de pago.
+            // ================================================================
+            int freqDiasCreate = dto.forma_pago switch {
+                FormasPago.DIARIA     => 1,
+                FormasPago.SEMANAL    => 7,
+                FormasPago.CATORCENAL => 14,
+                FormasPago.QUINCENAL  => 15,
+                _                     => 0, // MENSUAL
+            };
+            bool esMensualCreate = freqDiasCreate == 0;
 
-            DateTime fechaFin =
-                fechaInicio.AddMonths(dto.plazo_meses - 1);
+            bool fechaInicioManual = dto.fecha_inicio.HasValue && dto.fecha_inicio.Value != default;
+
+            DateTime fechaInicio = fechaInicioManual
+                ? TimeHelper.ConvertToMexicoTime(dto.fecha_inicio!.Value)
+                : (esMensualCreate
+                    ? fechaCreacion.AddMonths(1)
+                    : fechaCreacion.AddDays(freqDiasCreate));
+
+            DateTime fechaFin = esMensualCreate
+                ? fechaInicio.AddMonths(dto.plazo_meses - 1)
+                : fechaInicio.AddDays((double)(dto.plazo_meses - 1) * freqDiasCreate);
 
             decimal moraDiaria = Math.Round(pagoMes * (dto.tasa_interes * 12m * 2m / 100m) / 360m, 2);
 
@@ -529,6 +561,7 @@ namespace ApiEjemplo.Controllers
                 pago_mes = pagoMes,
 
                 fecha_inicio = fechaInicio,
+                fecha_inicio_manual = fechaInicioManual,
                 fecha_fin = fechaFin,
                 fecha_proximo_pago = fechaInicio,
 
@@ -693,7 +726,12 @@ namespace ApiEjemplo.Controllers
 
             // MONEYPINE-FIX: fecha_inicio puede venir explícita del DTO (campo "Fecha primer pago")
             if (dto.fecha_inicio.HasValue)
+            {
                 prestamo.fecha_inicio = dto.fecha_inicio.Value;
+                // Editarla a mano tambien la marca como manual, para que una
+                // aprobacion posterior no la sobrescriba con el dia de apertura
+                prestamo.fecha_inicio_manual = true;
+            }
             else
                 prestamo.fecha_inicio = esMonthlyUpd
                     ? prestamo.fecha_creacion.AddMonths(1)
