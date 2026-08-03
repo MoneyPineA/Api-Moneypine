@@ -4,6 +4,7 @@ using ApiEjemplo.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace ApiEjemplo.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260803082916_AddAhorroPlazoFijoYRendimiento")]
+    partial class AddAhorroPlazoFijoYRendimiento
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1040,9 +1043,6 @@ namespace ApiEjemplo.Migrations
 
                     b.Property<DateTime>("fecha_inicio")
                         .HasColumnType("datetime(6)");
-
-                    b.Property<bool>("fecha_inicio_manual")
-                        .HasColumnType("tinyint(1)");
 
                     b.Property<DateTime?>("fecha_proximo_pago")
                         .HasColumnType("datetime(6)");

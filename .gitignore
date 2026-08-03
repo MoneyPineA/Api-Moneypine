@@ -69,3 +69,7 @@ logs/
 [Ll]ogs/
 *.binlog
 MSBuild_Logs/
+
+# Build artifacts del proyecto de pruebas
+MoneyPine.Tests/bin/
+MoneyPine.Tests/obj/

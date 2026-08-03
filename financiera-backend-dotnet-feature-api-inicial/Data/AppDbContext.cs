@@ -240,6 +240,17 @@ namespace ApiEjemplo.Data
                       .IsRequired();
             });
 
+            // Se guarda como texto (VISTA / PLAZO_FIJO) para que la columna se
+            // lea sola al consultar la BD, igual que estatus.
+            modelBuilder.Entity<ProductoAhorro>(entity =>
+            {
+                entity.Property(p => p.tipo)
+                      .HasConversion<string>()
+                      .HasMaxLength(20)
+                      .HasDefaultValue(TipoProductoAhorro.VISTA)
+                      .IsRequired();
+            });
+
             modelBuilder.Entity<CuentaAhorro>()
                 .HasOne(c => c.Cliente)
                 .WithMany()
