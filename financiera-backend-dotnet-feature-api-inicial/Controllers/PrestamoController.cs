@@ -1113,11 +1113,16 @@ namespace ApiEjemplo.Controllers
                 .GroupBy(x => x.prestamo_id)
                 .Select(g => new
                 {
-                    prestamo_id     = g.Key,
-                    capital_vencido = g.Sum(x => x.abono_capital),
-                    interes_vencido = g.Sum(x => x.interes_normal),
-                    iva_vencido     = g.Sum(x => x.interes_iva),
-                    mora_vencida    = g.Sum(x => Math.Round(x.mora_diaria * Math.Max(0, (hoy - x.fecha_vencimiento.Date).Days), 2)),
+                    prestamo_id         = g.Key,
+                    capital_vencido     = g.Sum(x => x.abono_capital),
+                    interes_vencido     = g.Sum(x => x.interes_normal),
+                    iva_vencido         = g.Sum(x => x.interes_iva),
+                    mora_vencida        = g.Sum(x => Math.Round(x.mora_diaria * Math.Max(0, (hoy - x.fecha_vencimiento.Date).Days), 2)),
+                    // MONEYPINE-FIX: cantidad de parcialidades vencidas y la fecha de la MAS
+                    // ANTIGUA aun pendiente — si el cliente abona periodos viejos, esta fecha
+                    // avanza automaticamente al siguiente periodo vencido mas antiguo.
+                    cantidad_vencidos   = g.Count(),
+                    fecha_mas_antigua   = g.Min(x => x.fecha_vencimiento),
                 });
 
             return Ok(result);
