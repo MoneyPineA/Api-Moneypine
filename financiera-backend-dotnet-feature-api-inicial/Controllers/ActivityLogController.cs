@@ -64,12 +64,17 @@ namespace ApiEjemplo.Controllers
             {
                 a.Id,
                 tipo         = a.Type.ToString(),
+                // La etiqueta es SIEMPRE corta (es el badge del historial).
+                // El texto largo va en "descripcion" — usar la Description completa
+                // aquí rompía el layout con badges de párrafo entero.
                 etiqueta     = a.Type switch
                 {
                     ActivityType.PAYMENT_RECEIVED => "Pago recibido",
                     ActivityType.CREDIT_APPROVED  => "Crédito aprobado",
                     ActivityType.PAYMENT_OVERDUE  => "Pago vencido",
-                    _                             => a.Description ?? "Actividad",
+                    ActivityType.MORA_CONDONADA   => "Mora condonada",
+                    ActivityType.PAYMENT_DELETED  => "Pago eliminado",
+                    _                             => "Actividad",
                 },
                 cliente_id   = a.ClientId,
                 cliente      = clientes.TryGetValue(a.ClientId, out var cn) ? cn : $"Cliente #{a.ClientId}",

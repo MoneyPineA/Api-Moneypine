@@ -340,10 +340,33 @@ namespace ApiEjemplo.Controllers
 
             int prestamoId = pago.prestamo_id;
 
+            // Capturar los datos ANTES de borrar — se pierden con el Remove
+            var montoPagado = pago.monto_pagado;
+            var fechaPago   = pago.fecha_pago;
+            var metodoPago  = pago.metodo_pago;
+            var clienteId   = await _context.Prestamos
+                .Where(p => p.prestamo_id == prestamoId)
+                .Select(p => p.cliente_id)
+                .FirstOrDefaultAsync();
+
             _context.Pagos.Remove(pago);
             await _context.SaveChangesAsync();
 
             await _motorRecalculo.Reconstruir(prestamoId);
+
+            // Registrar la eliminación en el historial de actividades
+            var idClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            int.TryParse(idClaim, out var usuarioId);
+
+            await _activityService.CreateActivity(
+                ActivityType.PAYMENT_DELETED,
+                clienteId,
+                montoPagado,
+                NotificationLevel.HIGH,
+                $"Pago #{id} eliminado del crédito #{prestamoId} — {montoPagado:C2} " +
+                $"({metodoPago ?? "EFECTIVO"}, fecha original {fechaPago:yyyy-MM-dd})",
+                usuarioId == 0 ? null : usuarioId
+            );
 
             return NoContent();
         }
