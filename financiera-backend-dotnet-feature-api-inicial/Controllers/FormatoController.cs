@@ -29,6 +29,9 @@ namespace ApiEjemplo.Controllers
 
         private const long MaxArchivo = 10 * 1024 * 1024;  // 10 MB
         private const long MaxIcono   = 512 * 1024;        // 512 KB
+        // Los archivos se guardan como BLOB en MySQL (el disco de Railway es
+        // efímero). Se limita la cantidad total para no saturar el plan de Railway.
+        private const int MaxFormatos = 10;
 
         public FormatoController(AppDbContext context)
         {
@@ -89,6 +92,15 @@ namespace ApiEjemplo.Controllers
         {
             if (string.IsNullOrWhiteSpace(dto.Nombre))
                 return BadRequest("El nombre del formato es obligatorio");
+
+            var totalActual = await _context.FormatosDocumentos.CountAsync();
+            if (totalActual >= MaxFormatos)
+                return Conflict(new
+                {
+                    message = $"Se alcanzó el límite de {MaxFormatos} formatos. Elimina alguno antes de subir uno nuevo.",
+                    total_actual = totalActual,
+                    maximo = MaxFormatos,
+                });
 
             if (dto.Archivo == null || dto.Archivo.Length == 0)
                 return BadRequest("El archivo del formato es obligatorio");
