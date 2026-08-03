@@ -34,6 +34,17 @@ namespace ApiEjemplo.Models
         [Required]
         public EstatusAhorro estatus { get; set; } = EstatusAhorro.ACTIVA;
 
+        // Ultimo dia YA capitalizado. Hace idempotente el motor de rendimiento:
+        // solo se abonan los dias entre esta fecha y hoy, asi que ejecutarlo dos
+        // veces el mismo dia no paga doble. Null = nunca se ha capitalizado
+        // (se toma fecha_apertura como punto de partida).
+        public DateOnly? fecha_ultimo_rendimiento { get; set; }
+
+        // Total historico abonado por rendimientos (para reportes y para
+        // saber cuanto de un retiro es capital y cuanto es ganancia).
+        [Column(TypeName = "decimal(12,2)")]
+        public decimal rendimiento_acumulado { get; set; } = 0;
+
         public int? ejecutivo_id { get; set; }
 
         public DateTime created_at { get; set; } = DateTime.UtcNow;
