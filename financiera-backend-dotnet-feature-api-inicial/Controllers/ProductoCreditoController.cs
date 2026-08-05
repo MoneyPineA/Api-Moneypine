@@ -8,6 +8,7 @@ namespace ApiEjemplo.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [Authorize]
     public class ProductoCreditoController : ControllerBase
     {
         private readonly AppDbContext _context;

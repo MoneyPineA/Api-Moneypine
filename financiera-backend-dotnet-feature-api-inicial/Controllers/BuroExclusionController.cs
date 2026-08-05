@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ApiEjemplo.Data;
@@ -7,6 +8,7 @@ namespace ApiEjemplo.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [Authorize]
     public class BuroExclusionController : ControllerBase
     {
         private readonly AppDbContext _db;

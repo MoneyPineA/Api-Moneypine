@@ -1,5 +1,6 @@
 using ApiEjemplo.Data;
 using ApiEjemplo.Models;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -7,6 +8,7 @@ namespace ApiEjemplo.Controllers
 {
     [ApiController]
     [Route("api/Gerencia")]
+    [Authorize]
     public class GerenciaController : ControllerBase
     {
         private readonly AppDbContext _context;
