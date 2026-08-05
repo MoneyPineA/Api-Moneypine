@@ -1,6 +1,7 @@
 using ApiEjemplo.Data;
 using ApiEjemplo.Enums;
 using ApiEjemplo.Helpers;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Text.RegularExpressions;
@@ -9,6 +10,7 @@ namespace ApiEjemplo.Controllers
 {
     [ApiController]
     [Route("api/Cobranza")]
+    [Authorize]
     public class CobranzaController : ControllerBase
     {
         private readonly AppDbContext _context;

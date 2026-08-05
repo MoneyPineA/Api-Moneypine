@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using ApiEjemplo.Data;
 using ApiEjemplo.Enums;
@@ -7,6 +8,7 @@ namespace ApiEjemplo.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [Authorize]
     public class ActivityLogController : ControllerBase
     {
         private readonly AppDbContext _context;

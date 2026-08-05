@@ -27,6 +27,7 @@ namespace ApiEjemplo.Controllers
 
     [ApiController]
     [Route("api/[controller]")]
+    [Authorize]
     public class PrestamoController : ControllerBase
     {
         private readonly AppDbContext _context;

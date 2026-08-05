@@ -1,4 +1,5 @@
 using ApiEjemplo.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using ApiEjemplo.Enums;
 
@@ -6,6 +7,7 @@ namespace ApiEjemplo.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [Authorize]
     public class ReportesController : ControllerBase
     {
         private readonly InversionService _inversionService;
