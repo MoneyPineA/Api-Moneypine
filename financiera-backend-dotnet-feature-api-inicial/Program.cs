@@ -32,6 +32,18 @@ builder.Services.AddCors(options =>
 
             policy
                 .WithOrigins(allowedOrigins)
+                // MONEYPINE-FIX: en desarrollo se acepta cualquier puerto de
+                // localhost. Vite salta a 5174/5175 cuando el 5173 esta ocupado
+                // y el navegador bloqueaba el login sin explicar por que: el
+                // usuario solo veia "no se pudo conectar con el servidor".
+                // La lista fija sigue siendo la unica valida en produccion.
+                .SetIsOriginAllowed(origin =>
+                {
+                    if (allowedOrigins.Contains(origin)) return true;
+                    if (!builder.Environment.IsDevelopment()) return false;
+                    return Uri.TryCreate(origin, UriKind.Absolute, out var uri)
+                        && (uri.Host == "localhost" || uri.Host == "127.0.0.1");
+                })
                 .AllowAnyHeader()
                 .AllowAnyMethod();
         });
