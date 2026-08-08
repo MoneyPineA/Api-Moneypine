@@ -109,6 +109,9 @@ builder.Services.AddScoped<AplicacionPagoService>();
 builder.Services.AddScoped<MotorRecalculoPrestamoService>();
 builder.Services.AddScoped<ListaNegraService>();
 
+// Peticiones de roles no-ADMIN para ejecutar acciones sensibles
+builder.Services.AddScoped<SolicitudAprobacionService>();
+
 // MONEYPINE-FIX: cron job diario — reporta automáticamente a buró los créditos con mora >= 90 días
 builder.Services.AddHostedService<BuroAutoReporteService>();
 

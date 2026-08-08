@@ -220,6 +220,10 @@ namespace ApiEjemplo.Controllers
         }
 
         // DELETE /api/BuroAutoReporte/{clienteId} — quitar un cliente del auto-reporte (manual override)
+        // MONEYPINE-FIX: estaba abierto a cualquier rol autenticado. Quitar el
+        // auto-reporte borra el registro de mora en buro, asi que solo ADMIN.
+        // Los demas roles lo piden via SolicitudAprobacion.
+        [Authorize(Roles = "ADMIN")]
         [HttpDelete("{clienteId:int}")]
         public async Task<IActionResult> Quitar(int clienteId)
         {

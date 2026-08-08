@@ -18,6 +18,7 @@ namespace ApiEjemplo.Data
         public DbSet<Documento> Documentos { get; set; } 
         public DbSet<Notification> Notifications { get; set; }
         public DbSet<ActivityLog> ActivityLogs { get; set; }
+        public DbSet<SolicitudAprobacion> SolicitudesAprobacion { get; set; }
         public DbSet<Grupo> Grupos { get; set; }
         public DbSet<Gerencia> Gerencias { get; set; }
         public DbSet<Ruta> Rutas { get; set; }
@@ -228,6 +229,46 @@ namespace ApiEjemplo.Data
 
             // MONEYPINE-FIX: Railway usa tabla 'notifications' (minúsculas), no 'Notifications'
             modelBuilder.Entity<Notification>().ToTable("notifications");
+
+            // =======================
+            // SOLICITUDES DE APROBACIÓN
+            // =======================
+            modelBuilder.Entity<SolicitudAprobacion>(entity =>
+            {
+                entity.ToTable("solicitud_aprobacion");
+
+                // Enums como texto: agregar un TipoSolicitud nuevo no debe
+                // reinterpretar los registros ya guardados.
+                entity.Property(s => s.tipo)
+                      .HasConversion<string>()
+                      .HasMaxLength(30)
+                      .IsRequired();
+
+                entity.Property(s => s.estado)
+                      .HasConversion<string>()
+                      .HasMaxLength(20)
+                      .HasDefaultValue(EstadoSolicitud.PENDIENTE)
+                      .IsRequired();
+
+                entity.Property(s => s.justificacion).HasMaxLength(1000).IsRequired();
+                entity.Property(s => s.respuesta).HasMaxLength(1000);
+                entity.Property(s => s.descripcion).HasMaxLength(500);
+
+                // La bandeja del admin filtra por estado y ordena por fecha.
+                entity.HasIndex(s => new { s.estado, s.created_at });
+                entity.HasIndex(s => s.solicitante_id);
+
+                // Si se borra el usuario no se pierde el rastro de la solicitud.
+                entity.HasOne(s => s.Solicitante)
+                      .WithMany()
+                      .HasForeignKey(s => s.solicitante_id)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(s => s.Resolutor)
+                      .WithMany()
+                      .HasForeignKey(s => s.resuelta_por)
+                      .OnDelete(DeleteBehavior.Restrict);
+            });
 
             // =======================
             // MÓDULO AHORRO
