@@ -4,6 +4,13 @@ namespace ApiEjemplo.DTOs.Dashboard
 {
     public class RecentActivityDTO
     {
+        /// <summary>
+        /// Id del ActivityLog. Sin el, el frontend solo tenia ClientId para
+        /// identificar cada fila y un mismo cliente puede aparecer varias veces:
+        /// React acababa con dos elementos usando la misma key.
+        /// </summary>
+        public int Id { get; set; }
+
         public string Type { get; set; } = string.Empty;
 
         public string Label { get; set; } = string.Empty;

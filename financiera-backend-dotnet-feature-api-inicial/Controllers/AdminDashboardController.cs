@@ -368,6 +368,7 @@ namespace ApiEjemplo.Controllers
 
         var activities = logs.Select(a => new RecentActivityDTO
         {
+            Id = a.Id,
             Type = a.Type.ToString(),
             Label = a.Type switch
             {

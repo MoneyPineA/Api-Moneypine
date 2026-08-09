@@ -120,6 +120,11 @@ builder.Services.AddHostedService<BuroAutoReporteService>();
 // en la BD si nadie toca ese crédito el mismo día que vence.
 builder.Services.AddHostedService<EstatusPrestamoSweepService>();
 
+// MONEYPINE-FIX: cron job diario — sincroniza la lista negra. Antes dependia de
+// que alguien pulsara el boton, y llevaba tanto sin correr que faltaban 158
+// altas y los dias de mora estaban a anos de la realidad.
+builder.Services.AddHostedService<ListaNegraSyncService>();
+
 // Swagger
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
