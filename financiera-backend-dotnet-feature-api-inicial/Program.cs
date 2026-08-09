@@ -104,6 +104,13 @@ builder.Services.AddScoped<NotificationService>();
 
 builder.Services.AddAuthorization();
 
+// MONEYPINE-FIX: los 403 salian con el cuerpo vacio y el usuario solo veia
+// "Error 403". Este handler los responde con una explicacion en espanol y,
+// cuando la accion se puede pedir, indica que existe el camino de solicitud.
+builder.Services.AddSingleton<
+    Microsoft.AspNetCore.Authorization.IAuthorizationMiddlewareResultHandler,
+    ApiEjemplo.Security.RespuestaPermisoHandler>();
+
 // Servicio para registrar actividades del sistema (pagos, créditos, atrasos)
 builder.Services.AddScoped<ActivityService>();
 

@@ -52,7 +52,7 @@ namespace ApiEjemplo.Controllers
         {
             var rol = GetCallerRole();
             if (rol != RolUsuario.ADMIN && rol != RolUsuario.RECURSOS_HUMANOS)
-                return Forbid();
+                return StatusCode(403, new { message = "Tu perfil no puede gestionar trabajadores. Esta sección es de Administración y Recursos Humanos." });
 
             var usuarios = await _context.Usuarios.ToListAsync();
             return Ok(usuarios.Select(MapToDto));
@@ -64,7 +64,7 @@ namespace ApiEjemplo.Controllers
         {
             var rol = GetCallerRole();
             if (rol != RolUsuario.ADMIN && rol != RolUsuario.RECURSOS_HUMANOS)
-                return Forbid();
+                return StatusCode(403, new { message = "Tu perfil no puede gestionar trabajadores. Esta sección es de Administración y Recursos Humanos." });
 
             var usuario = await _context.Usuarios.FindAsync(id);
             if (usuario == null)
@@ -79,7 +79,7 @@ namespace ApiEjemplo.Controllers
         {
             var rol = GetCallerRole();
             if (rol != RolUsuario.ADMIN && rol != RolUsuario.RECURSOS_HUMANOS)
-                return Forbid();
+                return StatusCode(403, new { message = "Tu perfil no puede gestionar trabajadores. Esta sección es de Administración y Recursos Humanos." });
 
             if (rol == RolUsuario.RECURSOS_HUMANOS && dto.rol == RolUsuario.ADMIN)
                 return StatusCode(403, new { mensaje = "Recursos Humanos no puede crear cuentas con rol ADMIN." });
@@ -124,7 +124,7 @@ namespace ApiEjemplo.Controllers
             var callerId  = GetCallerId();
 
             if (callerRol != RolUsuario.ADMIN && callerRol != RolUsuario.RECURSOS_HUMANOS)
-                return Forbid();
+                return StatusCode(403, new { message = "Tu perfil no puede gestionar trabajadores. Esta sección es de Administración y Recursos Humanos." });
 
             var usuario = await _context.Usuarios.FindAsync(id);
             if (usuario == null)
@@ -192,7 +192,7 @@ namespace ApiEjemplo.Controllers
             var callerId  = GetCallerId();
 
             if (callerRol != RolUsuario.ADMIN)
-                return Forbid();
+                return StatusCode(403, new { message = "Solo un administrador puede dar de baja a un trabajador. Si lo necesitas, envía una solicitud para que la autorice." });
 
             var usuario = await _context.Usuarios.FindAsync(id);
             if (usuario == null)
