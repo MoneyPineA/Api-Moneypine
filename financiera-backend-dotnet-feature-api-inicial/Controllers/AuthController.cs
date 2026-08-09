@@ -37,8 +37,16 @@ namespace ApiEjemplo.Controllers
             var usuario = await _context.Usuarios
                 .FirstOrDefaultAsync(u => u.correo == request.correo);
 
+            // MONEYPINE-FIX: se responde con objeto JSON, no con string plano.
+            // Unauthorized("texto") sale como text/plain y el cliente, que hace
+            // response.json(), no podia leerlo: al usuario le aparecia "Error 401"
+            // en vez del motivo real. Mismo criterio en el resto del metodo.
+            //
+            // El mensaje es DELIBERADAMENTE igual para "correo no existe" y
+            // "password incorrecta": distinguirlos permitiria enumerar que
+            // correos estan dados de alta en el sistema.
             if (usuario == null)
-                return Unauthorized("Usuario o contraseña incorrectos");
+                return Unauthorized(new { message = "Usuario o contraseña incorrectos" });
 
             // Verificar contraseña — soporta BCrypt (migrado) y ASP.NET Identity (nuevos)
             bool passwordValida;
@@ -55,14 +63,14 @@ namespace ApiEjemplo.Controllers
             }
 
             if (!passwordValida)
-                return Unauthorized("Usuario o contraseña incorrectos");
+                return Unauthorized(new { message = "Usuario o contraseña incorrectos" });
 
             // Verificar estado
             if (usuario.estado == EstadoUsuario.INACTIVO)
-                return StatusCode(403, "Tu cuenta está inactiva. Contacta al administrador");
+                return StatusCode(403, new { message = "Tu cuenta está inactiva. Contacta al administrador" });
 
             if (usuario.estado == EstadoUsuario.BLOQUEADO)
-                return StatusCode(403, "Tu cuenta está bloqueada. Contacta al administrador");
+                return StatusCode(403, new { message = "Tu cuenta está bloqueada. Contacta al administrador" });
 
             // Obtener permisos
             var permisos = PermisosPorRol.Obtener(usuario.rol);
@@ -124,7 +132,7 @@ namespace ApiEjemplo.Controllers
                 );
 
             if (storedToken == null)
-                return Unauthorized("Refresh token inválido o expirado");
+                return Unauthorized(new { message = "Refresh token inválido o expirado" });
 
             var usuario = storedToken.Usuario;
 
@@ -152,14 +160,14 @@ namespace ApiEjemplo.Controllers
         {
             var idClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             if (!int.TryParse(idClaim, out var usuarioId))
-                return Unauthorized("Token sin identificador de usuario");
+                return Unauthorized(new { message = "Token sin identificador de usuario" });
 
             var usuario = await _context.Usuarios.FindAsync(usuarioId);
             if (usuario == null)
-                return Unauthorized("Usuario no encontrado");
+                return Unauthorized(new { message = "Usuario no encontrado" });
 
             if (usuario.estado != EstadoUsuario.ACTIVO)
-                return StatusCode(403, "Cuenta inactiva o bloqueada");
+                return StatusCode(403, new { message = "Cuenta inactiva o bloqueada" });
 
             return Ok(new
             {
