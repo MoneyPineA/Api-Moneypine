@@ -291,7 +291,7 @@ namespace ApiEjemplo.Controllers
 
             // El solicitante puede ver la suya; el resto de detalles, solo ADMIN.
             if (!User.IsInRole(nameof(RolUsuario.ADMIN)) && s.solicitante_id != UsuarioActual())
-                return Forbid();
+                return StatusCode(403, new { message = "Solo puedes consultar las solicitudes que tú enviaste." });
 
             return Ok(new
             {
@@ -361,7 +361,7 @@ namespace ApiEjemplo.Controllers
             if (s == null) return NotFound(new { message = "Solicitud no encontrada." });
 
             if (s.solicitante_id != UsuarioActual())
-                return Forbid();
+                return StatusCode(403, new { message = "Solo puedes retirar las solicitudes que tú enviaste." });
 
             if (s.estado != EstadoSolicitud.PENDIENTE)
                 return BadRequest(new { message = $"La solicitud ya fue resuelta ({s.estado})." });
