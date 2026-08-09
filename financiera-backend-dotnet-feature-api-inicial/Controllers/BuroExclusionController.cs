@@ -68,6 +68,10 @@ namespace ApiEjemplo.Controllers
         }
 
         // DELETE /api/BuroExclusion/{clienteId} — volver a habilitar reporte
+        // MONEYPINE-FIX: estaba abierto a cualquier rol autenticado. Sacar a un
+        // cliente del buro afecta su historial crediticio, asi que solo ADMIN.
+        // Los demas roles lo piden via SolicitudAprobacion.
+        [Authorize(Roles = "ADMIN")]
         [HttpDelete("{clienteId:int}")]
         public async Task<IActionResult> Restaurar(int clienteId)
         {

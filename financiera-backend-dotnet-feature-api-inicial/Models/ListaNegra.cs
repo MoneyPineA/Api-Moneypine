@@ -59,6 +59,21 @@ namespace ApiEjemplo.Models
         [Column("observaciones")]
         public string? observaciones { get; set; }
 
+        /// <summary>
+        /// Se marca cuando un ADMIN saca al cliente de la lista negra a mano.
+        ///
+        /// La sincronizacion automatica no vuelve a agregarlo aunque siga
+        /// cumpliendo los criterios de mora: sacarlo fue una decision humana
+        /// deliberada y un proceso de fondo no debe revertirla. Para que
+        /// reingrese hace falta que otro ADMIN lo agregue manualmente, y ese
+        /// alta si lo reporta a buro de credito.
+        ///
+        /// Sin esta bandera la sincronizacion recreaba la entrada minutos
+        /// despues, dejando sin efecto la autorizacion del administrador.
+        /// </summary>
+        [Column("bloquea_reingreso_auto")]
+        public bool bloquea_reingreso_auto { get; set; } = false;
+
         [Required]
         [Column("fecha_creacion")]
         public DateTime fecha_creacion { get; set; } = DateTime.UtcNow;

@@ -5,6 +5,7 @@ using ApiEjemplo.Data;
 using ApiEjemplo.Models;
 using ApiEjemplo.Enums;
 using ApiEjemplo.Helpers;
+using ApiEjemplo.Security;
 using ApiEjemplo.Services;
 using ApiEjemplo.DTOs.Prestamo;
 using System.Security.Claims;
@@ -33,6 +34,7 @@ namespace ApiEjemplo.Controllers
         private readonly AppDbContext _context;
         private readonly NotificationService _notificationService;
         private readonly ActivityService _activityService;
+        private readonly SolicitudAprobacionService _solicitudService;
 
         // =============================
         // Inyección del DbContext
@@ -40,11 +42,13 @@ namespace ApiEjemplo.Controllers
         public PrestamoController(
         AppDbContext context,
         NotificationService notificationService,
-        ActivityService activityService)
+        ActivityService activityService,
+        SolicitudAprobacionService solicitudService)
     {
         _context = context;
         _notificationService = notificationService;
         _activityService = activityService;
+        _solicitudService = solicitudService;
     }
 
         // =====================================================
@@ -884,7 +888,13 @@ namespace ApiEjemplo.Controllers
         // =====================================================
         // DELETE: api/Prestamo/5
         // Elimina un préstamo (si no está liquidado)
+        //
+        // MONEYPINE-FIX: estaba abierto a cualquier usuario autenticado — un
+        // COBRADOR podia borrar un credito completo. Eliminar un credito
+        // destruye sus periodos y descuadra la cartera, asi que se restringe a
+        // ADMIN. Los demas roles piden la baja via SolicitudAprobacion.
         // =====================================================
+        [Authorize(Roles = "ADMIN")]
         [HttpDelete("{id}")]
         public async Task<IActionResult> Delete(int id)
         {
@@ -1238,19 +1248,22 @@ namespace ApiEjemplo.Controllers
         // POST: api/Prestamo/{id}/condonar-mora
         // Condona (perdona) el interes moratorio acumulado de TODOS los
         // periodos de un credito — capital e interes normal NO se tocan.
-        // Solo ADMIN. Queda registrado en ActivityLog + Notification con
-        // quien lo autorizo, el motivo y el monto exacto perdonado.
+        // ADMIN sin limite. GERENTE hasta LimitesAutorizacion.CondonacionMoraGerente;
+        // por encima de esa cifra la misma llamada crea una solicitud para que
+        // la autorice un ADMIN, en vez de rechazar y obligar a cambiar de
+        // pantalla. Queda registrado en ActivityLog + Notification con quien lo
+        // autorizo, el motivo y el monto exacto perdonado.
         // =====================================================
-        [Authorize(Roles = "ADMIN")]
+        [Authorize(Roles = "ADMIN,GERENTE")]
         [HttpPost("{id}/condonar-mora")]
         public async Task<IActionResult> CondonarMora(int id, [FromBody] CondonarMoraDto dto)
         {
             if (string.IsNullOrWhiteSpace(dto.motivo))
-                return BadRequest("El motivo de la condonación es obligatorio");
+                return BadRequest(new { message = "El motivo de la condonación es obligatorio" });
 
             var prestamo = await _context.Prestamos.FindAsync(id);
             if (prestamo == null)
-                return NotFound("Crédito no encontrado");
+                return NotFound(new { message = "Crédito no encontrado" });
 
             var periodosConMora = await _context.PeriodosAmortizacion
                 .Where(p => p.prestamo_id == id && (p.interes_moratorio > 0 || p.dias_moratorio > 0))
@@ -1265,6 +1278,36 @@ namespace ApiEjemplo.Controllers
                 });
 
             var montoCondonado = periodosConMora.Sum(p => p.interes_moratorio);
+
+            var idClaimPrevio = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            int.TryParse(idClaimPrevio, out var solicitanteId);
+
+            // El tope se evalua sobre el monto real, calculado aqui: el gerente
+            // no tiene que adivinar cuanta mora acumulo el credito.
+            var esGerente = User.IsInRole(nameof(RolUsuario.GERENTE)) && !User.IsInRole(nameof(RolUsuario.ADMIN));
+            if (esGerente && montoCondonado > LimitesAutorizacion.CondonacionMoraGerente)
+            {
+                var solicitud = await _solicitudService.CrearAsync(
+                    TipoSolicitud.CONDONAR_MORA,
+                    solicitanteId,
+                    id,
+                    dto.motivo,
+                    prestamo.cliente_id,
+                    montoCondonado,
+                    $"Condonar mora de {montoCondonado:C2} en el crédito #{id}"
+                );
+
+                return Accepted(new
+                {
+                    message = $"La mora de este crédito ({montoCondonado:C2}) supera tu límite de " +
+                              $"{LimitesAutorizacion.CondonacionMoraGerente:C2}. " +
+                              "Se envió la solicitud a un administrador para su autorización.",
+                    requiere_autorizacion = true,
+                    solicitud_id  = solicitud.id,
+                    monto_mora    = montoCondonado,
+                    limite        = LimitesAutorizacion.CondonacionMoraGerente,
+                });
+            }
 
             foreach (var periodo in periodosConMora)
             {

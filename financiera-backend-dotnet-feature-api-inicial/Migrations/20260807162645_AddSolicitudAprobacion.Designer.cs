@@ -4,6 +4,7 @@ using ApiEjemplo.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace ApiEjemplo.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260807162645_AddSolicitudAprobacion")]
+    partial class AddSolicitudAprobacion
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -659,10 +662,6 @@ namespace ApiEjemplo.Migrations
                     b.Property<int?>("actualizado_por")
                         .HasColumnType("int")
                         .HasColumnName("actualizado_por");
-
-                    b.Property<bool>("bloquea_reingreso_auto")
-                        .HasColumnType("tinyint(1)")
-                        .HasColumnName("bloquea_reingreso_auto");
 
                     b.Property<int>("cliente_id")
                         .HasColumnType("int")

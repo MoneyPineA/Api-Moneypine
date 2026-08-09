@@ -170,11 +170,18 @@ namespace ApiEjemplo.Controllers
             try
             {
                 var resultado = await _svc.SincronizarAsync(UsuarioActual());
+
+                var mensaje = $"Sincronización completada: {resultado.agregados} agregados, " +
+                              $"{resultado.removidos} removidos.";
+                if (resultado.omitidos_por_baja_manual > 0)
+                    mensaje += $" {resultado.omitidos_por_baja_manual} omitido(s) por baja manual previa.";
+
                 return Ok(new
                 {
-                    message   = $"Sincronización completada: {resultado.agregados} agregados, {resultado.removidos} removidos.",
+                    message   = mensaje,
                     agregados = resultado.agregados,
                     removidos = resultado.removidos,
+                    omitidos_por_baja_manual = resultado.omitidos_por_baja_manual,
                 });
             }
             catch (Exception ex)

@@ -121,6 +121,9 @@ builder.Services.AddScoped<AplicacionPagoService>();
 builder.Services.AddScoped<MotorRecalculoPrestamoService>();
 builder.Services.AddScoped<ListaNegraService>();
 
+// Peticiones de roles no-ADMIN para ejecutar acciones sensibles
+builder.Services.AddScoped<SolicitudAprobacionService>();
+
 // MONEYPINE-FIX: cron job diario — reporta automáticamente a buró los créditos con mora >= 90 días
 builder.Services.AddHostedService<BuroAutoReporteService>();
 
@@ -128,6 +131,11 @@ builder.Services.AddHostedService<BuroAutoReporteService>();
 // de todos los préstamos ACTIVO, para que un vencimiento no se quede "invisible"
 // en la BD si nadie toca ese crédito el mismo día que vence.
 builder.Services.AddHostedService<EstatusPrestamoSweepService>();
+
+// MONEYPINE-FIX: cron job diario — sincroniza la lista negra. Antes dependia de
+// que alguien pulsara el boton, y llevaba tanto sin correr que faltaban 158
+// altas y los dias de mora estaban a anos de la realidad.
+builder.Services.AddHostedService<ListaNegraSyncService>();
 
 // Swagger
 builder.Services.AddEndpointsApiExplorer();
