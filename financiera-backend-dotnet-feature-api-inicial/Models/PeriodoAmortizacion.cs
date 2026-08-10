@@ -42,6 +42,14 @@ namespace ApiEjemplo.Models
         [Column(TypeName = "decimal(16,4)")]
         public decimal interes_moratorio { get; set; }
 
+        // MONEYPINE-FIX: mora condonada acumulada de este periodo. A diferencia de
+        // interes_moratorio (que MotorRecalculoPrestamoService.Reconstruir recalcula
+        // desde cero en cada pago/cron), este campo es durable — Reconstruir lo resta
+        // de la mora bruta recalculada en vez de resetearlo, para que una condonación
+        // parcial no reaparezca en el siguiente pago o barrido diario.
+        [Column(TypeName = "decimal(16,4)")]
+        public decimal mora_condonada { get; set; } = 0;
+
         [Column(TypeName = "decimal(16,4)")]
         public decimal gasto_cobranza { get; set; }
 

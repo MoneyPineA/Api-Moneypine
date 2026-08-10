@@ -88,8 +88,10 @@ namespace ApiEjemplo.Services
                     // Mora: se congela en la fecha en que cap+int+iva quedaron cubiertos
                     DateTime refMora = congelEn.TryGetValue(pid, out var fe) ? fe : fp;
                     int diasMora = Math.Max(0, (int)(refMora.Date - per.fecha_vencimiento.Date).TotalDays);
+                    // MONEYPINE-FIX: restar mora_condonada (durable) de la mora bruta recalculada —
+                    // así una condonación previa no se vuelve a cobrar en pagos posteriores.
                     decimal moraBruta = diasMora > 0 && prestamo.mora_diaria > 0
-                        ? Math.Round(prestamo.mora_diaria * diasMora, 2) : 0m;
+                        ? Math.Max(0m, Math.Round(prestamo.mora_diaria * diasMora, 2) - per.mora_condonada) : 0m;
 
                     // Pendientes reales
                     decimal capPend  = Math.Max(0m, per.abono_capital  - capC[pid]);
@@ -192,8 +194,9 @@ namespace ApiEjemplo.Services
 
                             DateTime refM = congelEn[pid];
                             int dM = Math.Max(0, (int)(refM.Date - per.fecha_vencimiento.Date).TotalDays);
+                            // MONEYPINE-FIX: idem — restar mora_condonada antes de congelar el valor final.
                             decimal moraFin = dM > 0 && prestamo.mora_diaria > 0
-                                ? Math.Round(prestamo.mora_diaria * dM, 2) : 0m;
+                                ? Math.Max(0m, Math.Round(prestamo.mora_diaria * dM, 2) - per.mora_condonada) : 0m;
 
                             bool moraCub = moraC[pid] >= moraFin - 0.01m;
 
@@ -243,8 +246,10 @@ namespace ApiEjemplo.Services
                 {
                     int d = Math.Max(0, (int)(hoy - per.fecha_vencimiento.Date).TotalDays);
                     per.dias_moratorio    = d;
+                    // MONEYPINE-FIX: idem — restar mora_condonada de la mora final de periodos
+                    // aún pendientes, para que una condonación parcial no reaparezca aquí.
                     per.interes_moratorio = d > 0 && prestamo.mora_diaria > 0
-                        ? Math.Round(prestamo.mora_diaria * d, 2) : 0m;
+                        ? Math.Max(0m, Math.Round(prestamo.mora_diaria * d, 2) - per.mora_condonada) : 0m;
                     per.ahorro_por_pago   = moraC.GetValueOrDefault(per.periodo_id, 0m);
                 }
                 _context.PeriodosAmortizacion.Update(per);
