@@ -429,6 +429,14 @@ namespace ApiEjemplo.Services
                 EstadoSolicitud.APROBADA);
         }
 
+        // MONEYPINE-FIX: TipoSolicitud.CONDONAR_MORA ya no se puede crear (ver
+        // LimitesAutorizacion.PuedeSolicitar — quedó restringido a que solo un
+        // ADMIN la ejecute directo vía PrestamoController.CondonarMora). Este
+        // método sigue aquí únicamente para resolver limpio cualquier solicitud
+        // que haya quedado PENDIENTE de antes del cambio; ya no se generan nuevas.
+        // Condona en mora_condonada (durable) en vez de zerar interes_moratorio
+        // directo, por la misma razón que PrestamoController.CondonarMora: ese
+        // campo se recalcula desde cero en cada Reconstruir().
         private async Task<ResultadoResolucion> EjecutarCondonarMoraAsync(SolicitudAprobacion s, int adminId)
         {
             var periodosConMora = await _context.PeriodosAmortizacion
@@ -442,11 +450,10 @@ namespace ApiEjemplo.Services
             var montoCondonado = periodosConMora.Sum(p => p.interes_moratorio);
 
             foreach (var periodo in periodosConMora)
-            {
-                periodo.interes_moratorio = 0m;
-                periodo.dias_moratorio    = 0;
-            }
+                periodo.mora_condonada += periodo.interes_moratorio;
+
             await _context.SaveChangesAsync();
+            await _motorRecalculo.Reconstruir(s.entidad_id);
 
             await _activityService.CreateActivity(
                 ActivityType.MORA_CONDONADA,

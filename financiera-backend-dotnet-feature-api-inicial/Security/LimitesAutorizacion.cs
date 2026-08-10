@@ -12,13 +12,10 @@ namespace ApiEjemplo.Security
     public static class LimitesAutorizacion
     {
         /// <summary>
-        /// Monto maximo de mora que un GERENTE puede condonar por si mismo.
-        /// Por encima de esta cifra la operacion se convierte en una solicitud
-        /// que debe autorizar un ADMIN.
-        ///
-        /// Referencia al definirlo: la mora promedio por credito era ~$34,700
-        /// y la mayor superaba los $536,000. El tope cubre el caso corriente
-        /// sin dejar los creditos grandes sin un segundo par de ojos.
+        /// MONEYPINE-FIX: condonar mora (parcial o total) quedó restringido a
+        /// solo ADMIN — ya no hay tope de GERENTE ni solicitud de por medio,
+        /// ver PrestamoController.CondonarMora. Se deja la constante (no la
+        /// referencia nadie más) por si se retoma un tope por rol más adelante.
         /// </summary>
         public const decimal CondonacionMoraGerente = 50_000m;
 
@@ -37,8 +34,11 @@ namespace ApiEjemplo.Security
 
             return tipo switch
             {
+                // MONEYPINE-FIX: condonar mora ya no es solicitable — quedó
+                // restringido a que solo un ADMIN la ejecute directamente.
+                TipoSolicitud.CONDONAR_MORA => false,
+
                 TipoSolicitud.ELIMINAR_PAGO
-                or TipoSolicitud.CONDONAR_MORA
                 or TipoSolicitud.QUITAR_LISTA_NEGRA
                 or TipoSolicitud.QUITAR_BURO
                     => rol is RolUsuario.GERENTE or RolUsuario.RECURSOS_HUMANOS
