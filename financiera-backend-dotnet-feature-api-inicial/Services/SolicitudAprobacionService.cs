@@ -439,6 +439,11 @@ namespace ApiEjemplo.Services
         // campo se recalcula desde cero en cada Reconstruir().
         private async Task<ResultadoResolucion> EjecutarCondonarMoraAsync(SolicitudAprobacion s, int adminId)
         {
+            // MONEYPINE-FIX: refrescar interes_moratorio contra la mora real de HOY antes de
+            // leerla — esta solicitud pudo quedar PENDIENTE varios días y el valor almacenado
+            // podría estar desactualizado (mismo criterio que ya usa PrestamoController.CondonarMora).
+            await _motorRecalculo.Reconstruir(s.entidad_id);
+
             var periodosConMora = await _context.PeriodosAmortizacion
                 .Where(p => p.prestamo_id == s.entidad_id && (p.interes_moratorio > 0 || p.dias_moratorio > 0))
                 .ToListAsync();

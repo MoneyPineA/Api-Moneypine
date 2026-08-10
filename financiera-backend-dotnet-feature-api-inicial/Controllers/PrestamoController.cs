@@ -1156,6 +1156,7 @@ namespace ApiEjemplo.Controllers
                       (pa, pr) => new {
                           pa.prestamo_id, pa.fecha_vencimiento, pr.mora_diaria,
                           pa.abono_capital, pa.interes_normal, pa.interes_iva,
+                          pa.mora_condonada,
                       })
                 .ToListAsync();
 
@@ -1167,7 +1168,11 @@ namespace ApiEjemplo.Controllers
                     capital_vencido     = g.Sum(x => x.abono_capital),
                     interes_vencido     = g.Sum(x => x.interes_normal),
                     iva_vencido         = g.Sum(x => x.interes_iva),
-                    mora_vencida        = g.Sum(x => Math.Round(x.mora_diaria * Math.Max(0, (hoy - x.fecha_vencimiento.Date).Days), 2)),
+                    // MONEYPINE-FIX: restar mora_condonada por periodo (Math.Max evita mora negativa
+                    // si algún día se condona más de lo que ese periodo específico generó).
+                    mora_vencida        = g.Sum(x => Math.Max(0m,
+                                              Math.Round(x.mora_diaria * Math.Max(0, (hoy - x.fecha_vencimiento.Date).Days), 2)
+                                              - x.mora_condonada)),
                     // MONEYPINE-FIX: cantidad de parcialidades vencidas y la fecha de la MAS
                     // ANTIGUA aun pendiente — si el cliente abona periodos viejos, esta fecha
                     // avanza automaticamente al siguiente periodo vencido mas antiguo.
@@ -1274,92 +1279,122 @@ namespace ApiEjemplo.Controllers
             if (prestamo == null)
                 return NotFound(new { message = "Crédito no encontrado" });
 
-            // MONEYPINE-FIX: no confiar en el saldo/mora que mande el frontend — se
-            // recalcula todo en vivo contra la BD antes de validar y aplicar nada.
-            await _motorRecalculo.Reconstruir(id);
-
-            var periodos = await _context.PeriodosAmortizacion
-                .Where(p => p.prestamo_id == id)
-                .OrderBy(p => p.fecha_vencimiento)
-                .ToListAsync();
-
-            // Mora realmente pendiente por periodo: igual formula que expone
-            // GET /api/Prestamo/{id}/amortizacion (neta de lo ya cubierto vía
-            // solo_mora — interes_moratorio ya viene neto de mora_condonada
-            // porque Reconstruir() se acaba de correr arriba).
             decimal MoraPendiente(PeriodoAmortizacion p) =>
                 Math.Max(0m, p.interes_moratorio - p.ahorro_por_pago);
 
-            var moraPendienteAntes = periodos.Sum(MoraPendiente);
+            // MONEYPINE-FIX: toda la operación financiera (reconstrucción, lectura de mora,
+            // validación, escritura de mora_condonada, segunda reconstrucción y auditoría)
+            // corre dentro de UNA transacción — si algo falla a mitad de camino, se revierte
+            // todo (no queda ni la condonación aplicada ni un ActivityLog huérfano).
+            await using var tx = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                // No confiar en el saldo/mora que mande el frontend — se recalcula
+                // todo en vivo contra la BD antes de validar y aplicar nada.
+                await _motorRecalculo.Reconstruir(id);
 
-            if (moraPendienteAntes <= 0.01m)
-                return BadRequest(new { message = "El crédito no tiene mora pendiente por condonar." });
+                // MONEYPINE-FIX: SELECT ... FOR UPDATE bloquea las filas de periodo_amortizacion
+                // de este préstamo hasta el commit/rollback. Si dos condonaciones llegan casi
+                // al mismo tiempo sobre el mismo crédito, la segunda espera a que la primera
+                // termine y entonces lee la mora YA actualizada — evita que ambas validen
+                // contra el mismo monto pendiente y terminen sobre-condonando en conjunto.
+                var periodos = await _context.PeriodosAmortizacion
+                    .FromSqlInterpolated($@"SELECT * FROM periodo_amortizacion
+                                             WHERE prestamo_id = {id}
+                                             ORDER BY fecha_vencimiento
+                                             FOR UPDATE")
+                    .ToListAsync();
 
-            if (dto.monto > moraPendienteAntes + 0.01m)
-                return BadRequest(new
+                // Mora realmente pendiente por periodo: igual formula que expone
+                // GET /api/Prestamo/{id}/amortizacion (neta de lo ya cubierto vía
+                // solo_mora — interes_moratorio ya viene neto de mora_condonada
+                // porque Reconstruir() se acaba de correr arriba).
+                var moraPendienteAntes = periodos.Sum(MoraPendiente);
+
+                if (moraPendienteAntes <= 0.01m)
                 {
-                    message = $"No puedes condonar {dto.monto:C2}: la mora pendiente es solo {moraPendienteAntes:C2}.",
-                    mora_pendiente = moraPendienteAntes,
+                    await tx.RollbackAsync();
+                    return BadRequest(new { message = "El crédito no tiene mora pendiente por condonar." });
+                }
+
+                if (dto.monto > moraPendienteAntes + 0.01m)
+                {
+                    await tx.RollbackAsync();
+                    return BadRequest(new
+                    {
+                        message = $"No puedes condonar {dto.monto:C2}: la mora pendiente es solo {moraPendienteAntes:C2}.",
+                        mora_pendiente = moraPendienteAntes,
+                    });
+                }
+
+                // Repartir el monto entre los periodos con mora, del vencimiento más
+                // antiguo al más reciente — mismo criterio cronológico que ya usa
+                // Reconstruir() para aplicar pagos.
+                decimal restante = dto.monto;
+                var periodosAfectados = 0;
+                foreach (var periodo in periodos)
+                {
+                    if (restante <= 0.005m) break;
+                    var pendientePeriodo = MoraPendiente(periodo);
+                    if (pendientePeriodo <= 0.005m) continue;
+
+                    var tomar = Math.Min(restante, pendientePeriodo);
+                    periodo.mora_condonada += tomar;
+                    restante -= tomar;
+                    periodosAfectados++;
+                }
+
+                await _context.SaveChangesAsync();
+
+                // Reconstruir de nuevo: refleja la condonación en interes_moratorio/
+                // estatus (p.ej. puede pasar a LIQUIDADO si ya no queda nada pendiente).
+                await _motorRecalculo.Reconstruir(id);
+
+                var prestamoActualizado = await _context.Prestamos.FindAsync(id);
+                var periodosDespues = await _context.PeriodosAmortizacion
+                    .Where(p => p.prestamo_id == id)
+                    .ToListAsync();
+                var moraPendienteDespues = periodosDespues.Sum(MoraPendiente);
+
+                var idClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                int.TryParse(idClaim, out var usuarioId);
+
+                var descripcion = $"Mora condonada en crédito #{id}: {dto.monto:C2} " +
+                                   $"({periodosAfectados} periodo(s)). Mora antes: {moraPendienteAntes:C2} → " +
+                                   $"después: {moraPendienteDespues:C2}. Motivo: {dto.motivo.Trim()}";
+
+                await _activityService.CreateActivity(
+                    ActivityType.MORA_CONDONADA,
+                    prestamo.cliente_id,
+                    dto.monto,
+                    NotificationLevel.NEUTRAL,
+                    descripcion,
+                    usuarioId == 0 ? null : usuarioId
+                );
+
+                await tx.CommitAsync();
+
+                // La notificación queda FUERA de la transacción financiera a propósito:
+                // perderla no afecta saldos ni auditoría, no vale la pena bloquear el commit por ella.
+                await _notificationService.CreateNotification(1, descripcion, NotificationLevel.NEUTRAL);
+
+                return Ok(new
+                {
+                    message = "Mora condonada correctamente.",
+                    prestamo_id = id,
+                    cliente_id = prestamo.cliente_id,
+                    periodos_afectados = periodosAfectados,
+                    monto_condonado = dto.monto,
+                    mora_pendiente_antes = moraPendienteAntes,
+                    mora_pendiente_despues = moraPendienteDespues,
+                    estatus_nuevo = prestamoActualizado?.estatus.ToString(),
                 });
-
-            // Repartir el monto entre los periodos con mora, del vencimiento más
-            // antiguo al más reciente — mismo criterio cronológico que ya usa
-            // Reconstruir() para aplicar pagos.
-            decimal restante = dto.monto;
-            var periodosAfectados = 0;
-            foreach (var periodo in periodos)
-            {
-                if (restante <= 0.005m) break;
-                var pendientePeriodo = MoraPendiente(periodo);
-                if (pendientePeriodo <= 0.005m) continue;
-
-                var tomar = Math.Min(restante, pendientePeriodo);
-                periodo.mora_condonada += tomar;
-                restante -= tomar;
-                periodosAfectados++;
             }
-
-            await _context.SaveChangesAsync();
-
-            // Reconstruir de nuevo: refleja la condonación en interes_moratorio/
-            // estatus (p.ej. puede pasar a LIQUIDADO si ya no queda nada pendiente).
-            await _motorRecalculo.Reconstruir(id);
-
-            var prestamoActualizado = await _context.Prestamos.FindAsync(id);
-            var periodosDespues = await _context.PeriodosAmortizacion
-                .Where(p => p.prestamo_id == id)
-                .ToListAsync();
-            var moraPendienteDespues = periodosDespues.Sum(MoraPendiente);
-
-            var idClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            int.TryParse(idClaim, out var usuarioId);
-
-            var descripcion = $"Mora condonada en crédito #{id}: {dto.monto:C2} " +
-                               $"({periodosAfectados} periodo(s)). Mora antes: {moraPendienteAntes:C2} → " +
-                               $"después: {moraPendienteDespues:C2}. Motivo: {dto.motivo.Trim()}";
-
-            await _activityService.CreateActivity(
-                ActivityType.MORA_CONDONADA,
-                prestamo.cliente_id,
-                dto.monto,
-                NotificationLevel.NEUTRAL,
-                descripcion,
-                usuarioId == 0 ? null : usuarioId
-            );
-
-            await _notificationService.CreateNotification(1, descripcion, NotificationLevel.NEUTRAL);
-
-            return Ok(new
+            catch
             {
-                message = "Mora condonada correctamente.",
-                prestamo_id = id,
-                cliente_id = prestamo.cliente_id,
-                periodos_afectados = periodosAfectados,
-                monto_condonado = dto.monto,
-                mora_pendiente_antes = moraPendienteAntes,
-                mora_pendiente_despues = moraPendienteDespues,
-                estatus_nuevo = prestamoActualizado?.estatus.ToString(),
-            });
+                await tx.RollbackAsync();
+                throw;
+            }
         }
     }
 }

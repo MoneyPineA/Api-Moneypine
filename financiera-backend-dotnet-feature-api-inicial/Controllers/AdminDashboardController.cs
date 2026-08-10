@@ -153,13 +153,15 @@ namespace ApiEjemplo.Controllers
                       (pa, pr) => new {
                           pa.fecha_vencimiento, pr.mora_diaria,
                           pa.abono_capital, pa.interes_normal, pa.interes_iva,
+                          pa.mora_condonada,
                       })
                 .ToListAsync();
 
+            // MONEYPINE-FIX: restar mora_condonada por periodo (Math.Max evita mora negativa).
             decimal moratoriosGenerados = periodsOverdue.Sum(x =>
             {
                 int dias = Math.Max(0, (hoy - x.fecha_vencimiento.Date).Days);
-                return Math.Round(x.mora_diaria * dias, 2);
+                return Math.Max(0m, Math.Round(x.mora_diaria * dias, 2) - x.mora_condonada);
             });
 
             // MONEYPINE-FIX: desglose del saldo vencido para la grafica de "Informacion en

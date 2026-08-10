@@ -192,7 +192,8 @@ namespace ApiEjemplo.Services
                     {
                         int d = Math.Max(0, (int)(fechaPago.Date - p.fecha_vencimiento.Date).TotalDays);
                         decimal m = d > 0 ? Math.Round(prestamo.mora_diaria * d, 2) : 0m;
-                        return Math.Max(0m, m - p.ahorro_por_pago);
+                        // MONEYPINE-FIX: restar mora_condonada (durable) — mismo criterio que Reconstruir().
+                        return Math.Max(0m, m - p.ahorro_por_pago - p.mora_condonada);
                     }),
 
                 "solo_capital" =>
@@ -218,7 +219,8 @@ namespace ApiEjemplo.Services
                         return Math.Max(0m, p.abono_capital  - a.Cap) +
                                Math.Max(0m, p.interes_normal - a.Int) +
                                Math.Max(0m, p.interes_iva    - a.Iva) +
-                               Math.Max(0m, mora - p.ahorro_por_pago);
+                               // MONEYPINE-FIX: restar mora_condonada — mismo criterio que Reconstruir().
+                               Math.Max(0m, mora - p.ahorro_por_pago - p.mora_condonada);
                     }),
             };
         }
@@ -254,7 +256,8 @@ namespace ApiEjemplo.Services
                 if (pagoRestante <= 0) break;
                 int d = Math.Max(0, (int)(fechaPago.Date - p.fecha_vencimiento.Date).TotalDays);
                 decimal mora = d > 0 ? Math.Round(prestamo.mora_diaria * d, 2) : 0m;
-                decimal moraRest = Math.Max(0m, mora - p.ahorro_por_pago);
+                // MONEYPINE-FIX: restar mora_condonada — mismo criterio que Reconstruir().
+                decimal moraRest = Math.Max(0m, mora - p.ahorro_por_pago - p.mora_condonada);
                 if (moraRest <= 0) continue;
                 decimal aplicar = pagoRestante >= moraRest - 0.05m ? moraRest : pagoRestante;
                 res.mora_total += aplicar;
@@ -357,7 +360,11 @@ namespace ApiEjemplo.Services
                 decimal ivaPend  = Math.Max(0m, p.interes_iva    - a.Iva);
 
                 int d = Math.Max(0, (int)(fechaPago.Date - p.fecha_vencimiento.Date).TotalDays);
-                decimal moraBruta = d > 0 ? Math.Round(prestamo.mora_diaria * d, 2) : 0m;
+                // MONEYPINE-FIX: restar mora_condonada (durable) — mismo criterio que Reconstruir(),
+                // así "moraBruta" queda neta de lo condonado y se propaga a moraPend/interes_moratorio.
+                decimal moraBruta = d > 0
+                    ? Math.Max(0m, Math.Round(prestamo.mora_diaria * d, 2) - p.mora_condonada)
+                    : 0m;
                 decimal moraPend  = Math.Max(0m, moraBruta - p.ahorro_por_pago);
 
                 // Costo del periodo para este tipo de pago
