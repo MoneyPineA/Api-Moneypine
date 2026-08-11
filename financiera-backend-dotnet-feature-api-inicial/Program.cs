@@ -2,6 +2,7 @@ using ApiEjemplo.Data;
 using ApiEjemplo.Middleware;
 using ApiEjemplo.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
@@ -71,6 +72,15 @@ if (!string.IsNullOrEmpty(connectionString) &&
     !connectionString.Contains("charset=", StringComparison.OrdinalIgnoreCase))
     connectionString += ";charset=utf8mb4";
 
+// MONEYPINE-MT: limite de pool por instancia. Sin esto, cada replica abre
+// conexiones sin tope (default de MySqlConnector = 100) y con varias replicas
+// se puede agotar max_connections de Railway. 20 es un SUPUESTO (no verificado
+// contra el max_connections real del plan de Railway) — ajustar si se confirma
+// el limite real dividido entre el numero de replicas.
+if (!string.IsNullOrEmpty(connectionString) &&
+    !connectionString.Contains("Maximum Pool Size", StringComparison.OrdinalIgnoreCase))
+    connectionString += ";Maximum Pool Size=20;Minimum Pool Size=0";
+
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseMySql(
         connectionString,
@@ -102,7 +112,14 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 // Servicio de Notificaciones
 builder.Services.AddScoped<NotificationService>();
 
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    // MONEYPINE-MT: cerrado por defecto. Un endpoint sin [Authorize] no tiene JWT,
+    // por tanto no tiene tenant, y devolvería datos de todos los prestamistas.
+    options.FallbackPolicy = new AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .Build();
+});
 
 // MONEYPINE-FIX: los 403 salian con el cuerpo vacio y el usuario solo veia
 // "Error 403". Este handler los responde con una explicacion en espanol y,
@@ -234,32 +251,28 @@ app.MapControllers();
 // =======================
 // MIGRACIONES AUTOMÁTICAS
 // =======================
-using (var scope = app.Services.CreateScope())
+// MONEYPINE-MT: migrar en el arranque es una condicion de carrera con varias
+// replicas (dos instancias pueden migrar a la vez). El objetivo es un
+// pre-deploy command en Railway; hasta que este configurado, el default
+// conserva el comportamiento actual para no romper el despliegue.
+// La comparacion normaliza el valor: "False" o " false" son intentos evidentes de
+// desactivarlo, y con una comparacion exacta habrian seguido migrando en silencio.
+var migrarAlArrancar = Environment.GetEnvironmentVariable("RUN_MIGRATIONS_ON_STARTUP")
+    ?.Trim().ToLowerInvariant() != "false";
+if (migrarAlArrancar)
 {
+    using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     db.Database.Migrate();
 }
 
 // =======================
-// MONEYPINE-FIX: recalcular saldo_actual de todos los préstamos desde sus periodos pendientes
-// Corrige saldos desincronizados causados por pagos previos con lógica errónea
+// MONEYPINE-MT (B3): el recalculo de saldo_actual de TODOS los prestamos ya no
+// corre en el arranque (era un N+1 sobre la tabla completa que ademas escribia
+// en la cartera de todos los clientes en cada deploy, sin que nadie lo pidiera).
+// Se movio a POST /api/admin/recalcular-saldos (AdminDashboardController),
+// protegido con [Authorize(Roles="ADMIN")]. Logica identica, solo cambio donde vive.
 // =======================
-using (var scope = app.Services.CreateScope())
-{
-    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    var prestamos = await db.Prestamos.ToListAsync();
-    foreach (var p in prestamos)
-    {
-        // abono_capital = capital que aporta ese periodo; sumar = capital total pendiente de pagar
-        var saldoPendiente = await db.PeriodosAmortizacion
-            .Where(pa => pa.prestamo_id == p.prestamo_id && pa.estado_pago == 1)
-            .SumAsync(pa => (decimal?)pa.abono_capital) ?? 0;
-
-        if (saldoPendiente > 0)
-            p.saldo_actual = saldoPendiente;
-    }
-    await db.SaveChangesAsync();
-}
 
 // =======================
 // MONEYPINE-FIX: crear tablas del módulo de ahorro si no existen

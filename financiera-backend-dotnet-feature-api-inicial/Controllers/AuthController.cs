@@ -30,6 +30,10 @@ namespace ApiEjemplo.Controllers
         // ==========================
         // POST: api/auth/login
         // ==========================
+        // MONEYPINE-MT: unico endpoint junto con Refresh que debe quedar publico.
+        // El FallbackPolicy en Program.cs exige autenticacion por defecto; sin este
+        // atributo nadie podria loguearse (no hay JWT antes de tener JWT).
+        [AllowAnonymous]
         [HttpPost("login")]
         public async Task<IActionResult> Login(LoginRequestDto request)
         {
@@ -113,6 +117,9 @@ namespace ApiEjemplo.Controllers
         // ==========================
         // POST: api/auth/refresh
         // ==========================
+        // MONEYPINE-MT: publico por la misma razon que Login — el cliente aun no
+        // tiene access token vigente cuando llama a este endpoint.
+        [AllowAnonymous]
         [HttpPost("refresh")]
         public async Task<IActionResult> Refresh(TokenRefreshRequestDto request)
         {

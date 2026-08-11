@@ -307,6 +307,35 @@ namespace ApiEjemplo.Controllers
             return Ok(summary);
         }
 
+        // =====================================================
+        // POST: api/admin/recalcular-saldos
+        // MONEYPINE-MT (B3): recalculo de saldo_actual movido fuera del arranque.
+        // Antes corria en Program.cs en cada boot sobre TODA la tabla prestamos
+        // (N+1 sobre la tabla completa) y escribia en la cartera de todos los
+        // clientes sin que nadie lo pidiera; con varias replicas ademas corria
+        // varias veces en paralelo. La logica es identica a la original, solo
+        // cambio donde vive y que ahora la dispara un ADMIN a proposito.
+        // =====================================================
+        [Authorize(Roles = "ADMIN")]
+        [HttpPost("/api/admin/recalcular-saldos")]
+        public async Task<IActionResult> RecalcularSaldos()
+        {
+            var prestamos = await _context.Prestamos.ToListAsync();
+            foreach (var p in prestamos)
+            {
+                // abono_capital = capital que aporta ese periodo; sumar = capital total pendiente de pagar
+                var saldoPendiente = await _context.PeriodosAmortizacion
+                    .Where(pa => pa.prestamo_id == p.prestamo_id && pa.estado_pago == 1)
+                    .SumAsync(pa => (decimal?)pa.abono_capital) ?? 0;
+
+                if (saldoPendiente > 0)
+                    p.saldo_actual = saldoPendiente;
+            }
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "Saldos recalculados", prestamos_procesados = prestamos.Count });
+        }
+
         [Authorize(Roles = "ADMIN")]
         [HttpGet("recent-activity")]
         public async Task<IActionResult> GetRecentActivity()
