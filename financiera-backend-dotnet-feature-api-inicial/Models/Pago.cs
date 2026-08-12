@@ -2,14 +2,19 @@ using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Text.Json.Serialization;
 using ApiEjemplo.Enums;
+using ApiEjemplo.Tenancy;
 
 namespace ApiEjemplo.Models
 {
     [Table("pago")]
-    public class Pago
+    public class Pago : ITenantEntity
     {
         [Key]
         public int pago_id { get; set; }
+
+        // MONEYPINE-MT: Fase 1 — Parte 4.3. Redundante con prestamo.prestamista_id
+        // a propósito: evita que el aislamiento dependa de un JOIN bien escrito.
+        public int prestamista_id { get; set; }
 
         [Required]
         public int prestamo_id { get; set; }

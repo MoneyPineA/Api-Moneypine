@@ -1,14 +1,18 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Text.Json.Serialization;
+using ApiEjemplo.Tenancy;
 
 namespace ApiEjemplo.Models
 {
     [Table("ruta")]
-    public class Ruta
+    public class Ruta : ITenantEntity
     {
         [Key]
         public int ruta_id { get; set; }
+
+        // MONEYPINE-MT: Fase 1 — Parte 4.3
+        public int prestamista_id { get; set; }
 
         [Required, MaxLength(30)]
         public string codigo { get; set; } = "";

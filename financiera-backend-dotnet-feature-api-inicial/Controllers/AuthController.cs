@@ -38,7 +38,18 @@ namespace ApiEjemplo.Controllers
         public async Task<IActionResult> Login(LoginRequestDto request)
         {
             // Buscar usuario por correo
+            // MONEYPINE-MT: IgnoreQueryFilters() deliberado — I4 lo prohíbe fuera de
+            // api/platform/*, pero login es el ÚNICO caso legítimo: en este punto no
+            // hay JWT, TenantResolutionMiddleware no corrió, e ITenantContext está en
+            // su default (PrestamistaId=0). Con el filtro activo esta consulta jamás
+            // encuentra al usuario real (prestamista_id=1) — el login queda roto para
+            // TODOS los tenants. El tenant recién se conoce leyendo usuario.prestamista_id
+            // aquí mismo, y de ahí sale el claim del JWT (ver GenerarAccessToken). Riesgo
+            // conocido: correo no es único globalmente (ver deuda del arquitecto), así
+            // que un correo duplicado entre dos tenants es ambiguo — deuda existente,
+            // no introducida por este cambio.
             var usuario = await _context.Usuarios
+                .IgnoreQueryFilters()
                 .FirstOrDefaultAsync(u => u.correo == request.correo);
 
             // MONEYPINE-FIX: se responde con objeto JSON, no con string plano.
@@ -130,7 +141,14 @@ namespace ApiEjemplo.Controllers
             // - Que exista
             // - Que no esté revocado
             // - Que NO esté expirado
+            // MONEYPINE-MT: IgnoreQueryFilters() deliberado — mismo motivo que en Login.
+            // RefreshToken no es ITenantEntity, pero el Include(Usuario) trae el filtro
+            // de Usuario como predicado del JOIN; sin JWT (AllowAnonymous) el tenant está
+            // en su default y el JOIN nunca encontraría al usuario real, dejando /refresh
+            // roto para todos los tenants (EF además advierte de esto al construir el
+            // modelo: "required end of a relationship... filtered out").
             var storedToken = await _context.RefreshTokens
+                .IgnoreQueryFilters()
                 .Include(rt => rt.Usuario)
                 .FirstOrDefaultAsync(rt =>
                     rt.Token == hashedToken &&
@@ -196,7 +214,11 @@ namespace ApiEjemplo.Controllers
             {
                 new Claim(ClaimTypes.NameIdentifier, usuario.usuario_id.ToString()),
                 new Claim(ClaimTypes.Email, usuario.correo),
-                new Claim(ClaimTypes.Role, usuario.rol.ToString())
+                new Claim(ClaimTypes.Role, usuario.rol.ToString()),
+                // MONEYPINE-MT: TenantResolutionMiddleware lee este claim para resolver
+                // ITenantContext en cada request. Sin él, cualquier usuario autenticado
+                // no-plataforma recibe 403 "Token sin tenant asignado".
+                new Claim("prestamista_id", usuario.prestamista_id.ToString())
             };
 
             claims.AddRange(permisos.Select(p => new Claim("permission", p)));

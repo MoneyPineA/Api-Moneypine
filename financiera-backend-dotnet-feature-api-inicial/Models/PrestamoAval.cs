@@ -1,14 +1,18 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Text.Json.Serialization;
+using ApiEjemplo.Tenancy;
 
 namespace ApiEjemplo.Models;
 
 [Table("prestamo_aval")]
-public class PrestamoAval
+public class PrestamoAval : ITenantEntity
 {
     [Key]
     public int id { get; set; }
+
+    // MONEYPINE-MT: Fase 1 — Parte 4.3
+    public int prestamista_id { get; set; }
 
     [Required]
     public int prestamo_id { get; set; }

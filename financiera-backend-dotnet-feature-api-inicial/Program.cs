@@ -1,6 +1,7 @@
 using ApiEjemplo.Data;
 using ApiEjemplo.Middleware;
 using ApiEjemplo.Services;
+using ApiEjemplo.Tenancy;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
@@ -87,6 +88,12 @@ builder.Services.AddDbContext<AppDbContext>(options =>
         new MySqlServerVersion(new Version(8, 0, 32))
     )
 );
+
+// MONEYPINE-MT: Scoped, uno por request (Fase 1 — Parte 4.5, invariante I6).
+// NUNCA AddDbContextPool arriba: el pool reutiliza instancias de AppDbContext
+// entre requests y no reinyecta servicios scoped, así que ITenantContext
+// quedaría pegado al tenant que abrió esa instancia la primera vez.
+builder.Services.AddScoped<ITenantContext, TenantContext>();
 
 // =======================
 // JWT AUTHENTICATION
@@ -240,6 +247,12 @@ app.UseCors("AllowFrontend");
 
 // ORDEN IMPORTANTE
 app.UseAuthentication();
+
+// MONEYPINE-MT: DESPUÉS de UseAuthentication (necesita context.User poblado) y
+// ANTES de UseAuthorization (el resto del pipeline, incluido el AppDbContext de
+// cada controller, necesita el tenant ya resuelto). Fase 1 — Parte 4.5.
+app.UseMiddleware<TenantResolutionMiddleware>();
+
 app.UseAuthorization();
 
 // MONEYPINE-FIX: registra la actividad del usuario autenticado (Reportes/Trabajadores conectados)
@@ -281,6 +294,15 @@ if (migrarAlArrancar)
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+    // MONEYPINE-MT: este scope no pasa por TenantResolutionMiddleware (no hay
+    // request/JWT en el arranque), así que ITenantContext queda en PrestamistaId=0
+    // por defecto. El query filter global (ver AppDbContext.OnModelCreating) ya
+    // aplica a db.ProductosAhorro, y con TenantId=0 el CountAsync de abajo NO
+    // vería las filas reales (sembradas con prestamista_id=1) — el seed se
+    // reinsertaría en cada arranque. El seed siempre fue explícitamente para el
+    // tenant 1 (ver el INSERT más abajo), así que fijamos el contexto a ese tenant.
+    scope.ServiceProvider.GetRequiredService<ITenantContext>().Establecer(1);
 
     await db.Database.ExecuteSqlRawAsync(@"
         CREATE TABLE IF NOT EXISTS producto_ahorro (
@@ -329,12 +351,16 @@ using (var scope = app.Services.CreateScope())
     var count = await db.ProductosAhorro.CountAsync();
     if (count == 0)
     {
+        // MONEYPINE-MT: prestamista_id explícito — la migración MT01 le quitó
+        // el DEFAULT a la columna (a propósito, ver Fase 1), así que un INSERT
+        // sin esta columna truena en un entorno limpio donde esta tabla se
+        // siembra por primera vez.
         await db.Database.ExecuteSqlRawAsync(@"
-            INSERT INTO producto_ahorro (nombre, tasa_anual, plazo_dias, descripcion) VALUES
-              ('AHORRO ORDINARIO',    0.00,  365, 'Ahorro sin rendimiento, plazo anual'),
-              ('AHORRO CRECEMAX',    10.00,  180, 'Rendimiento del 10% anual, plazo 180 dias'),
-              ('Inversion 60',       60.00,   60, 'Rendimiento del 60% anual, plazo 60 dias'),
-              ('Ahorro CreceMax 120',120.00, 120, 'Rendimiento del 120% anual, plazo 120 dias');
+            INSERT INTO producto_ahorro (nombre, tasa_anual, plazo_dias, descripcion, prestamista_id) VALUES
+              ('AHORRO ORDINARIO',    0.00,  365, 'Ahorro sin rendimiento, plazo anual', 1),
+              ('AHORRO CRECEMAX',    10.00,  180, 'Rendimiento del 10% anual, plazo 180 dias', 1),
+              ('Inversion 60',       60.00,   60, 'Rendimiento del 60% anual, plazo 60 dias', 1),
+              ('Ahorro CreceMax 120',120.00, 120, 'Rendimiento del 120% anual, plazo 120 dias', 1);
         ");
     }
 }
@@ -345,6 +371,11 @@ using (var scope = app.Services.CreateScope())
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+    // MONEYPINE-MT: mismo motivo que el bloque de producto_ahorro arriba —
+    // sin este Establecer(1), el CountAsync filtrado por TenantId=0 nunca
+    // vería el seed real (prestamista_id=1) y lo reinsertaría en cada arranque.
+    scope.ServiceProvider.GetRequiredService<ITenantContext>().Establecer(1);
 
     await db.Database.ExecuteSqlRawAsync(@"
         CREATE TABLE IF NOT EXISTS concepto_sistema (
@@ -360,16 +391,18 @@ using (var scope = app.Services.CreateScope())
     var count = await db.ConceptosSistema.CountAsync();
     if (count == 0)
     {
+        // MONEYPINE-MT: prestamista_id explícito — ver nota equivalente arriba
+        // en el seed de producto_ahorro.
         await db.Database.ExecuteSqlRawAsync(@"
-            INSERT INTO concepto_sistema (nombre, tipo, orden) VALUES
-              ('Alimento',          'GASTO', 1),
-              ('Luz',               'GASTO', 2),
-              ('Teléfono',          'GASTO', 3),
-              ('Transporte',        'GASTO', 4),
-              ('Renta',             'GASTO', 5),
-              ('Inversión negocio', 'GASTO', 6),
-              ('Créditos',          'GASTO', 7),
-              ('Otros',             'GASTO', 8);
+            INSERT INTO concepto_sistema (nombre, tipo, orden, prestamista_id) VALUES
+              ('Alimento',          'GASTO', 1, 1),
+              ('Luz',               'GASTO', 2, 1),
+              ('Teléfono',          'GASTO', 3, 1),
+              ('Transporte',        'GASTO', 4, 1),
+              ('Renta',             'GASTO', 5, 1),
+              ('Inversión negocio', 'GASTO', 6, 1),
+              ('Créditos',          'GASTO', 7, 1),
+              ('Otros',             'GASTO', 8, 1);
         ");
     }
 }

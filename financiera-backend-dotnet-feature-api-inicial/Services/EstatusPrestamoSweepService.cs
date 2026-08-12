@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using ApiEjemplo.Data;
 using ApiEjemplo.Enums;
+using ApiEjemplo.Tenancy;
 
 namespace ApiEjemplo.Services
 {
@@ -47,6 +48,12 @@ namespace ApiEjemplo.Services
                 using var scope = _scopeFactory.CreateScope();
                 var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
+                // MONEYPINE-MT: sin request/JWT no hay tenant resuelto por el middleware.
+                // Se fija al tenant 1 (único existente en Fase 1) para no dejar el query
+                // filter global vaciando db.Prestamos en silencio. DEUDA: iterar por
+                // prestamista cuando haya más de uno (Fase 3/4).
+                scope.ServiceProvider.GetRequiredService<ITenantContext>().Establecer(1);
+
                 var candidatos = await db.Prestamos
                     .Where(p => p.estatus == EstatusPrestamo.ACTIVO)
                     .Select(p => p.prestamo_id)
@@ -61,6 +68,9 @@ namespace ApiEjemplo.Services
                         // para que un error puntual no invalide el resto del barrido
                         // ni deje el ChangeTracker en un estado inconsistente.
                         using var pScope = _scopeFactory.CreateScope();
+                        // MONEYPINE-MT: scope nuevo -> AppDbContext/ITenantContext nuevos,
+                        // otra vez sin tenant resuelto. Mismo fix que arriba.
+                        pScope.ServiceProvider.GetRequiredService<ITenantContext>().Establecer(1);
                         var motor = pScope.ServiceProvider.GetRequiredService<MotorRecalculoPrestamoService>();
                         await motor.Reconstruir(prestamoId);
                         actualizados++;

@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using ApiEjemplo.Data;
 using ApiEjemplo.Enums;
 using ApiEjemplo.Models;
+using ApiEjemplo.Tenancy;
 
 namespace ApiEjemplo.Services
 {
@@ -46,6 +47,15 @@ namespace ApiEjemplo.Services
                 using var scope = _scopeFactory.CreateScope();
                 var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
+                // MONEYPINE-MT: este timer no pasa por TenantResolutionMiddleware (no hay
+                // request/JWT), así que ITenantContext quedaría en PrestamistaId=0 y el
+                // query filter global dejaría db.Prestamos/db.BuroExclusiones/db.BuroAutoReportes
+                // vacíos — el job "correría" sin procesar nada, en silencio. Fase 1 solo
+                // tiene el tenant 1; se fija explícito para no regresar el comportamiento
+                // actual. DEUDA: cuando exista un segundo tenant real, este job debe
+                // iterar sobre cada prestamista activo (Fase 3/4), no asumir el 1.
+                scope.ServiceProvider.GetRequiredService<ITenantContext>().Establecer(1);
+
                 // Leer configuracion_sistema para verificar si reporte automático está activo
                 var conn = db.Database.GetDbConnection();
                 if (conn.State != System.Data.ConnectionState.Open)
@@ -54,7 +64,12 @@ namespace ApiEjemplo.Services
                 string reporteActivo = "false";
                 using (var cmd = conn.CreateCommand())
                 {
-                    cmd.CommandText = "SELECT valor FROM configuracion_sistema WHERE clave = 'reporte_automatico'";
+                    // MONEYPINE-MT: filtro manual, SQL crudo. Sin el tenant explicito,
+                    // el flag de un prestamista decidiria el auto-reporte a buro de
+                    // todos los demas. El scope ya fijo el tenant unas lineas arriba.
+                    cmd.CommandText =
+                        "SELECT valor FROM configuracion_sistema " +
+                        "WHERE clave = 'reporte_automatico' AND prestamista_id = 1";
                     using var reader = await cmd.ExecuteReaderAsync();
                     if (await reader.ReadAsync())
                         reporteActivo = reader.GetString(0);

@@ -1,14 +1,19 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using ApiEjemplo.Tenancy;
 
 namespace ApiEjemplo.Models
 {
     [Table("documento")]
-    public class Documento
+    public class Documento : ITenantEntity
     {
         [Key]
         [Column("documento_id")]
         public int DocumentoId { get; set; }
+
+        // MONEYPINE-MT: Fase 1 — Parte 4.3
+        [Column("prestamista_id")]
+        public int prestamista_id { get; set; }
 
         [Column("cliente_id")]
         public int ClienteId { get; set; }

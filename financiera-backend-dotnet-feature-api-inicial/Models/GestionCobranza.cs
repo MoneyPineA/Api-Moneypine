@@ -1,14 +1,18 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Text.Json.Serialization;
+using ApiEjemplo.Tenancy;
 
 namespace ApiEjemplo.Models
 {
     [Table("gestion_cobranza")]
-    public class GestionCobranza
+    public class GestionCobranza : ITenantEntity
     {
         [Key]
         public int gestion_id { get; set; }
+
+        // MONEYPINE-MT: Fase 1 — Parte 4.3
+        public int prestamista_id { get; set; }
 
         [Required]
         public int prestamo_id { get; set; }

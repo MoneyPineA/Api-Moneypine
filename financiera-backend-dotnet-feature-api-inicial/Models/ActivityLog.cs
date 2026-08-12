@@ -1,10 +1,14 @@
 using ApiEjemplo.Enums;
+using ApiEjemplo.Tenancy;
 
 namespace ApiEjemplo.Models
 {
-    public class ActivityLog
+    public class ActivityLog : ITenantEntity
     {
         public int Id { get; set; }
+
+        // MONEYPINE-MT: tenant propietario del log (Fase 1 — Parte 4.3)
+        public int prestamista_id { get; set; }
 
         public ActivityType Type { get; set; }
 
