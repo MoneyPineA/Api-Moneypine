@@ -253,6 +253,11 @@ app.UseAuthentication();
 // cada controller, necesita el tenant ya resuelto). Fase 1 — Parte 4.5.
 app.UseMiddleware<TenantResolutionMiddleware>();
 
+// MONEYPINE-MT: Fase 3 — confina PLATFORM_ADMIN a /api/platform/* y /api/auth/*.
+// Justo después del middleware de tenant (necesita EsPlataforma ya resuelto vía
+// el rol del token) y antes de UseAuthorization. Ver Tenancy/PlatformScopeMiddleware.cs.
+app.UseMiddleware<ApiEjemplo.Tenancy.PlatformScopeMiddleware>();
+
 app.UseAuthorization();
 
 // MONEYPINE-FIX: registra la actividad del usuario autenticado (Reportes/Trabajadores conectados)

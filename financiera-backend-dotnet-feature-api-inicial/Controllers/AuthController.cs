@@ -87,6 +87,18 @@ namespace ApiEjemplo.Controllers
             if (usuario.estado == EstadoUsuario.BLOQUEADO)
                 return StatusCode(403, new { message = "Tu cuenta está bloqueada. Contacta al administrador" });
 
+            // MONEYPINE-MT: Fase 3 — un tenant SUSPENDIDO o CANCELADO no puede
+            // loguear a ninguno de sus usuarios. PLATFORM_ADMIN no pertenece a
+            // la cartera de ningún tenant (su prestamista_id es solo el que le
+            // tocó al crear la fila), así que se excluye de este chequeo.
+            if (usuario.rol != RolUsuario.PLATFORM_ADMIN)
+            {
+                var prestamista = await _context.Prestamistas
+                    .FirstOrDefaultAsync(p => p.prestamista_id == usuario.prestamista_id);
+                if (prestamista != null && prestamista.estatus != EstatusPrestamista.ACTIVO)
+                    return StatusCode(403, new { message = "Tu organización está suspendida" });
+            }
+
             // Obtener permisos
             var permisos = PermisosPorRol.Obtener(usuario.rol);
 
