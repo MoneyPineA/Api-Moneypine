@@ -54,10 +54,13 @@ namespace ApiEjemplo.Services
             }
 
             // ── 2. Acumuladores en memoria ────────────────────────────────
-            // capC, intC, ivaC, moraC: cuánto se ha cubierto de cada concepto por periodo
-            var capC  = periodos.ToDictionary(p => p.periodo_id, _ => 0m);
-            var intC  = periodos.ToDictionary(p => p.periodo_id, _ => 0m);
-            var ivaC  = periodos.ToDictionary(p => p.periodo_id, _ => 0m);
+            // capC, intC, ivaC, moraC: cuánto se ha cubierto de cada concepto por periodo.
+            // MONEYPINE-FIX: sembrar capC/intC/ivaC con lo condonado (durable) — igual criterio
+            // que mora_condonada en la fórmula de mora: un capital/interés/IVA condonado cuenta
+            // como "ya cubierto" para cerrar periodos y para saldo_actual, sin crear un pago real.
+            var capC  = periodos.ToDictionary(p => p.periodo_id, p => p.capital_condonado);
+            var intC  = periodos.ToDictionary(p => p.periodo_id, p => p.interes_condonado);
+            var ivaC  = periodos.ToDictionary(p => p.periodo_id, p => p.iva_condonado);
             var moraC = periodos.ToDictionary(p => p.periodo_id, _ => 0m);
             // congelEn: fecha en que cap+int+iva quedaron cubiertos (mora se congela desde aquí)
             var congelEn = new Dictionary<int, DateTime>();
@@ -238,8 +241,50 @@ namespace ApiEjemplo.Services
                 if (dets.Count > 0) _context.PagoDetalles.AddRange(dets);
             }
 
-            // ── 5. Estado final de períodos aún pendientes ────────────────
             var hoy = TimeHelper.GetMexicoTime().Date;
+
+            // ── 4.5. Cerrar periodos cubiertos SOLO por condonación de crédito ─
+            // El bloque de cierre de arriba (dentro del foreach de pagos) solo se
+            // ejecuta para periodos tocados por un pago real. Si capital+interés+IVA
+            // quedan cubiertos únicamente por capital_condonado/interes_condonado/
+            // iva_condonado (p.ej. se condonó el 100% del crédito sin ningún pago),
+            // ese periodo nunca pasa por ahí y se quedaría en estado_pago=1 para
+            // siempre — bloqueando LIQUIDADO aunque no quede nada realmente pendiente.
+            // Misma lógica de cierre/congelamiento de mora que el bloque de pago real,
+            // usando "hoy" como fecha de referencia del congelamiento.
+            foreach (var per in periodos)
+            {
+                if (per.estado_pago != 1) continue;
+
+                int pid = per.periodo_id;
+                bool isVacioCond = per.abono_capital  <= 0.01m
+                                && per.interes_normal <= 0.01m
+                                && per.interes_iva    <= 0.01m;
+                if (isVacioCond) continue;
+
+                bool capOkCond = capC[pid] >= per.abono_capital  - 0.01m;
+                bool intOkCond = intC[pid] >= per.interes_normal - 0.01m;
+                bool ivaOkCond = ivaC[pid] >= per.interes_iva    - 0.01m;
+                if (!(capOkCond && intOkCond && ivaOkCond)) continue;
+
+                if (!congelEn.ContainsKey(pid))
+                    congelEn[pid] = hoy;
+
+                DateTime refMCond = congelEn[pid];
+                int dMCond = Math.Max(0, (int)(refMCond.Date - per.fecha_vencimiento.Date).TotalDays);
+                decimal moraFinCond = dMCond > 0 && prestamo.mora_diaria > 0
+                    ? Math.Max(0m, Math.Round(prestamo.mora_diaria * dMCond, 2) - per.mora_condonada) : 0m;
+
+                bool moraCubCond = moraC[pid] >= moraFinCond - 0.01m;
+
+                per.estado_pago       = (moraCubCond || moraFinCond <= 0.01m) ? 3 : 5;
+                per.fecha_pagado      = per.fecha_pagado ?? hoy;
+                per.ahorro_por_pago   = moraC[pid];
+                per.dias_moratorio    = dMCond;
+                per.interes_moratorio = moraFinCond;
+            }
+
+            // ── 5. Estado final de períodos aún pendientes ────────────────
             foreach (var per in periodos)
             {
                 if (per.estado_pago == 1)
@@ -256,7 +301,10 @@ namespace ApiEjemplo.Services
             }
 
             // ── 6. Estado del préstamo ────────────────────────────────────
-            prestamo.saldo_actual = Math.Max(0m, prestamo.monto - runningCap);
+            // MONEYPINE-FIX: el capital condonado reduce saldo_actual igual que el capital
+            // pagado — es capital que ya no está pendiente, aunque no haya entrado dinero.
+            decimal capitalCondonadoTotal = periodos.Sum(p => p.capital_condonado);
+            prestamo.saldo_actual = Math.Max(0m, prestamo.monto - runningCap - capitalCondonadoTotal);
 
             bool hayVencido      = periodos.Any(p => p.estado_pago == 1 && p.fecha_vencimiento.Date < hoy);
             bool hayMoraPendiente = periodos.Any(p => p.estado_pago == 5);

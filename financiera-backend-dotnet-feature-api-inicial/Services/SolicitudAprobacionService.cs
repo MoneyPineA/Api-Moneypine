@@ -431,17 +431,17 @@ namespace ApiEjemplo.Services
 
         // MONEYPINE-FIX: TipoSolicitud.CONDONAR_MORA ya no se puede crear (ver
         // LimitesAutorizacion.PuedeSolicitar — quedó restringido a que solo un
-        // ADMIN la ejecute directo vía PrestamoController.CondonarMora). Este
+        // ADMIN la ejecute directo vía PrestamoController.Condonar). Este
         // método sigue aquí únicamente para resolver limpio cualquier solicitud
         // que haya quedado PENDIENTE de antes del cambio; ya no se generan nuevas.
         // Condona en mora_condonada (durable) en vez de zerar interes_moratorio
-        // directo, por la misma razón que PrestamoController.CondonarMora: ese
+        // directo, por la misma razón que PrestamoController.Condonar: ese
         // campo se recalcula desde cero en cada Reconstruir().
         private async Task<ResultadoResolucion> EjecutarCondonarMoraAsync(SolicitudAprobacion s, int adminId)
         {
             // MONEYPINE-FIX: refrescar interes_moratorio contra la mora real de HOY antes de
             // leerla — esta solicitud pudo quedar PENDIENTE varios días y el valor almacenado
-            // podría estar desactualizado (mismo criterio que ya usa PrestamoController.CondonarMora).
+            // podría estar desactualizado (mismo criterio que ya usa PrestamoController.Condonar).
             await _motorRecalculo.Reconstruir(s.entidad_id);
 
             var periodosConMora = await _context.PeriodosAmortizacion

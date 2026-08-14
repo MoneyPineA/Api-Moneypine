@@ -19,10 +19,13 @@ namespace ApiEjemplo.Controllers
         public DateTime? fecha_apertura { get; set; }
     }
 
-    // MONEYPINE-FIX: DTO para el body de POST /condonar-mora — monto parcial o total
-    public class CondonarMoraDto
+    // MONEYPINE-FIX: DTO unificado para el body de POST /condonar — crédito (capital+
+    // interés+IVA), mora, o ambos en la misma operación. montoCredito=0 y/o montoMora=0
+    // significa "no condonar ese concepto". Reemplaza al antiguo CondonarMoraDto (solo mora).
+    public class CondonarDto
     {
-        public decimal monto { get; set; }
+        public decimal montoCredito { get; set; }
+        public decimal montoMora { get; set; }
         public string motivo { get; set; } = string.Empty;
     }
 
@@ -35,6 +38,7 @@ namespace ApiEjemplo.Controllers
         private readonly NotificationService _notificationService;
         private readonly ActivityService _activityService;
         private readonly MotorRecalculoPrestamoService _motorRecalculo;
+        private readonly AplicacionPagoService _motorPago;
 
         // =============================
         // Inyección del DbContext
@@ -43,12 +47,14 @@ namespace ApiEjemplo.Controllers
         AppDbContext context,
         NotificationService notificationService,
         ActivityService activityService,
-        MotorRecalculoPrestamoService motorRecalculo)
+        MotorRecalculoPrestamoService motorRecalculo,
+        AplicacionPagoService motorPago)
     {
         _context = context;
         _notificationService = notificationService;
         _activityService = activityService;
         _motorRecalculo = motorRecalculo;
+        _motorPago = motorPago;
     }
 
         // =====================================================
@@ -1075,10 +1081,12 @@ namespace ApiEjemplo.Controllers
                 }
                 else
                 {
+                    // MONEYPINE-FIX: restar capital_condonado/interes_condonado/iva_condonado
+                    // (durable) — mismo criterio que Reconstruir() y AplicacionPagoService.
                     var ac = acumPd.GetValueOrDefault(p.periodo_id);
-                    decimal capRest = Math.Max(0m, p.abono_capital  - (ac?.capPag ?? 0m));
-                    decimal intRest = Math.Max(0m, p.interes_normal - (ac?.intPag ?? 0m));
-                    decimal ivaRest = Math.Max(0m, p.interes_iva    - (ac?.ivaPag ?? 0m));
+                    decimal capRest = Math.Max(0m, p.abono_capital  - (ac?.capPag ?? 0m) - p.capital_condonado);
+                    decimal intRest = Math.Max(0m, p.interes_normal - (ac?.intPag ?? 0m) - p.interes_condonado);
+                    decimal ivaRest = Math.Max(0m, p.interes_iva    - (ac?.ivaPag ?? 0m) - p.iva_condonado);
                     pagoRestante = capRest + intRest + ivaRest;
                 }
 
@@ -1157,6 +1165,7 @@ namespace ApiEjemplo.Controllers
                           pa.prestamo_id, pa.fecha_vencimiento, pr.mora_diaria,
                           pa.abono_capital, pa.interes_normal, pa.interes_iva,
                           pa.mora_condonada,
+                          pa.capital_condonado, pa.interes_condonado, pa.iva_condonado,
                       })
                 .ToListAsync();
 
@@ -1165,9 +1174,11 @@ namespace ApiEjemplo.Controllers
                 .Select(g => new
                 {
                     prestamo_id         = g.Key,
-                    capital_vencido     = g.Sum(x => x.abono_capital),
-                    interes_vencido     = g.Sum(x => x.interes_normal),
-                    iva_vencido         = g.Sum(x => x.interes_iva),
+                    // MONEYPINE-FIX: restar capital_condonado/interes_condonado/iva_condonado
+                    // por periodo (Math.Max evita negativos).
+                    capital_vencido     = g.Sum(x => Math.Max(0m, x.abono_capital  - x.capital_condonado)),
+                    interes_vencido     = g.Sum(x => Math.Max(0m, x.interes_normal - x.interes_condonado)),
+                    iva_vencido         = g.Sum(x => Math.Max(0m, x.interes_iva    - x.iva_condonado)),
                     // MONEYPINE-FIX: restar mora_condonada por periodo (Math.Max evita mora negativa
                     // si algún día se condona más de lo que ese periodo específico generó).
                     mora_vencida        = g.Sum(x => Math.Max(0m,
@@ -1251,29 +1262,35 @@ namespace ApiEjemplo.Controllers
         }
 
         // =====================================================
-        // POST: api/Prestamo/{id}/condonar-mora
-        // Condona (perdona) una cantidad — parcial o total — de la mora
-        // pendiente de un credito. Capital, interes normal e IVA NO se tocan.
-        // Solo ADMIN. Queda registrado en ActivityLog + Notification con
-        // quien lo autorizo, el motivo y el monto exacto perdonado.
+        // POST: api/Prestamo/{id}/condonar
+        // Condona (perdona) crédito (capital+interés+IVA), mora, o ambos en la
+        // misma operación — parcial o total. Solo ADMIN. La condonación NO es
+        // un pago: no crea registros de Pago ni pago_detalle, no altera el
+        // historial de pagos ni los reportes de dinero cobrado. Queda
+        // registrada en ActivityLog + Notification con quién la autorizó, el
+        // motivo y los montos exactos perdonados de cada concepto.
         //
-        // MONEYPINE-FIX: la mora condonada se guarda en PeriodoAmortizacion.
-        // mora_condonada (durable) en vez de solo poner interes_moratorio=0 —
-        // ese campo se recalcula desde cero en cada Reconstruir() (pago nuevo,
-        // pago eliminado, recalibracion, barrido diario), asi que zerarlo
-        // directo hacia que la mora condonada "reapareciera" en el siguiente
-        // pago. Reconstruir() ahora resta mora_condonada de la mora bruta que
-        // recalcula, asi que lo condonado nunca se vuelve a cobrar.
+        // MONEYPINE-FIX: el crédito condonado se guarda en PeriodoAmortizacion.
+        // capital_condonado/interes_condonado/iva_condonado (durable) — mismo
+        // patrón que mora_condonada: Reconstruir() los trata como "ya cubierto"
+        // en vez de resetearlos, así una condonación de crédito no reaparece en
+        // el siguiente pago, cron o recalibración. El orden de aplicación de una
+        // condonación parcial de crédito es Capital → Interés → IVA, agregado en
+        // todo el crédito (periodo más antiguo primero dentro de cada concepto),
+        // el mismo orden que ya usa el sistema para aplicar pagos.
         // =====================================================
         [Authorize(Roles = "ADMIN")]
-        [HttpPost("{id}/condonar-mora")]
-        public async Task<IActionResult> CondonarMora(int id, [FromBody] CondonarMoraDto dto)
+        [HttpPost("{id}/condonar")]
+        public async Task<IActionResult> Condonar(int id, [FromBody] CondonarDto dto)
         {
             if (string.IsNullOrWhiteSpace(dto.motivo))
                 return BadRequest(new { message = "El motivo de la condonación es obligatorio" });
 
-            if (dto.monto <= 0)
-                return BadRequest(new { message = "La cantidad a condonar debe ser mayor a $0." });
+            if (dto.montoCredito < 0 || dto.montoMora < 0)
+                return BadRequest(new { message = "Las cantidades a condonar no pueden ser negativas." });
+
+            if (dto.montoCredito <= 0 && dto.montoMora <= 0)
+                return BadRequest(new { message = "Indica una cantidad mayor a $0 en crédito, mora, o ambos." });
 
             var prestamo = await _context.Prestamos.FindAsync(id);
             if (prestamo == null)
@@ -1282,9 +1299,10 @@ namespace ApiEjemplo.Controllers
             decimal MoraPendiente(PeriodoAmortizacion p) =>
                 Math.Max(0m, p.interes_moratorio - p.ahorro_por_pago);
 
-            // MONEYPINE-FIX: toda la operación financiera (reconstrucción, lectura de mora,
-            // validación, escritura de mora_condonada, segunda reconstrucción y auditoría)
-            // corre dentro de UNA transacción — si algo falla a mitad de camino, se revierte
+            // MONEYPINE-FIX: toda la operación financiera (reconstrucción, lectura de
+            // saldos, validación, escritura de capital_condonado/interes_condonado/
+            // iva_condonado/mora_condonada, segunda reconstrucción y auditoría) corre
+            // dentro de UNA transacción — si algo falla a mitad de camino, se revierte
             // todo (no queda ni la condonación aplicada ni un ActivityLog huérfano).
             await using var tx = await _context.Database.BeginTransactionAsync();
             try
@@ -1296,7 +1314,7 @@ namespace ApiEjemplo.Controllers
                 // MONEYPINE-FIX: SELECT ... FOR UPDATE bloquea las filas de periodo_amortizacion
                 // de este préstamo hasta el commit/rollback. Si dos condonaciones llegan casi
                 // al mismo tiempo sobre el mismo crédito, la segunda espera a que la primera
-                // termine y entonces lee la mora YA actualizada — evita que ambas validen
+                // termine y entonces lee los saldos YA actualizados — evita que ambas validen
                 // contra el mismo monto pendiente y terminen sobre-condonando en conjunto.
                 var periodos = await _context.PeriodosAmortizacion
                     .FromSqlInterpolated($@"SELECT * FROM periodo_amortizacion
@@ -1305,68 +1323,150 @@ namespace ApiEjemplo.Controllers
                                              FOR UPDATE")
                     .ToListAsync();
 
-                // Mora realmente pendiente por periodo: igual formula que expone
-                // GET /api/Prestamo/{id}/amortizacion (neta de lo ya cubierto vía
-                // solo_mora — interes_moratorio ya viene neto de mora_condonada
-                // porque Reconstruir() se acaba de correr arriba).
-                var moraPendienteAntes = periodos.Sum(MoraPendiente);
+                // Acumulado real de pagos aplicados (pago_detalle) — misma fuente que usa
+                // AplicacionPagoService para "pendiente real" en preview/aplicación de pagos.
+                var acum = await _motorPago.CargarAcumPorPeriodo(id);
+                AplicacionPagoService.AcumPd Acum(int pid) =>
+                    acum.GetValueOrDefault(pid, new AplicacionPagoService.AcumPd(0, 0, 0));
 
-                if (moraPendienteAntes <= 0.01m)
+                decimal CapPend(PeriodoAmortizacion p) =>
+                    Math.Max(0m, p.abono_capital  - Acum(p.periodo_id).Cap - p.capital_condonado);
+                decimal IntPend(PeriodoAmortizacion p) =>
+                    Math.Max(0m, p.interes_normal - Acum(p.periodo_id).Int - p.interes_condonado);
+                decimal IvaPend(PeriodoAmortizacion p) =>
+                    Math.Max(0m, p.interes_iva    - Acum(p.periodo_id).Iva - p.iva_condonado);
+
+                // Solo periodos aún abiertos (estado_pago==1) pueden tener capital/interés/
+                // IVA pendiente — un periodo cerrado (3/5) ya tiene esos tres conceptos cubiertos.
+                var periodosAbiertos = periodos.Where(p => p.estado_pago == 1)
+                    .OrderBy(p => p.fecha_vencimiento).ToList();
+
+                var creditoPendienteAntes = periodosAbiertos.Sum(p => CapPend(p) + IntPend(p) + IvaPend(p));
+                var moraPendienteAntes    = periodos.Sum(MoraPendiente);
+
+                if (dto.montoCredito > 0 && creditoPendienteAntes <= 0.01m)
                 {
                     await tx.RollbackAsync();
-                    return BadRequest(new { message = "El crédito no tiene mora pendiente por condonar." });
+                    return BadRequest(new { message = "El crédito no tiene saldo (capital+interés+IVA) pendiente por condonar." });
                 }
-
-                if (dto.monto > moraPendienteAntes + 0.01m)
+                if (dto.montoCredito > creditoPendienteAntes + 0.01m)
                 {
                     await tx.RollbackAsync();
                     return BadRequest(new
                     {
-                        message = $"No puedes condonar {dto.monto:C2}: la mora pendiente es solo {moraPendienteAntes:C2}.",
+                        message = $"No puedes condonar {dto.montoCredito:C2} de crédito: el saldo pendiente es solo {creditoPendienteAntes:C2}.",
+                        credito_pendiente = creditoPendienteAntes,
+                    });
+                }
+                if (dto.montoMora > 0 && moraPendienteAntes <= 0.01m)
+                {
+                    await tx.RollbackAsync();
+                    return BadRequest(new { message = "El crédito no tiene mora pendiente por condonar." });
+                }
+                if (dto.montoMora > moraPendienteAntes + 0.01m)
+                {
+                    await tx.RollbackAsync();
+                    return BadRequest(new
+                    {
+                        message = $"No puedes condonar {dto.montoMora:C2} de mora: la mora pendiente es solo {moraPendienteAntes:C2}.",
                         mora_pendiente = moraPendienteAntes,
                     });
                 }
 
-                // Repartir el monto entre los periodos con mora, del vencimiento más
-                // antiguo al más reciente — mismo criterio cronológico que ya usa
-                // Reconstruir() para aplicar pagos.
-                decimal restante = dto.monto;
-                var periodosAfectados = 0;
+                // ── Condonación de crédito: Capital → Interés → IVA, agregado en todo
+                // el crédito (periodo más antiguo primero dentro de cada concepto).
+                decimal restanteCredito = dto.montoCredito;
+                var periodosCreditoAfectados = new HashSet<int>();
+
+                foreach (var periodo in periodosAbiertos)
+                {
+                    if (restanteCredito <= 0.005m) break;
+                    var pend = CapPend(periodo);
+                    if (pend <= 0.005m) continue;
+                    var tomar = Math.Min(restanteCredito, pend);
+                    periodo.capital_condonado += tomar;
+                    restanteCredito -= tomar;
+                    periodosCreditoAfectados.Add(periodo.periodo_id);
+                }
+                foreach (var periodo in periodosAbiertos)
+                {
+                    if (restanteCredito <= 0.005m) break;
+                    var pend = IntPend(periodo);
+                    if (pend <= 0.005m) continue;
+                    var tomar = Math.Min(restanteCredito, pend);
+                    periodo.interes_condonado += tomar;
+                    restanteCredito -= tomar;
+                    periodosCreditoAfectados.Add(periodo.periodo_id);
+                }
+                foreach (var periodo in periodosAbiertos)
+                {
+                    if (restanteCredito <= 0.005m) break;
+                    var pend = IvaPend(periodo);
+                    if (pend <= 0.005m) continue;
+                    var tomar = Math.Min(restanteCredito, pend);
+                    periodo.iva_condonado += tomar;
+                    restanteCredito -= tomar;
+                    periodosCreditoAfectados.Add(periodo.periodo_id);
+                }
+
+                // ── Condonación de mora: mismo criterio cronológico ya validado
+                // (periodo más antiguo primero, sobre TODOS los periodos con mora,
+                // incluyendo congelados — un concepto totalmente independiente del crédito).
+                decimal restanteMora = dto.montoMora;
+                var periodosMoraAfectados = 0;
                 foreach (var periodo in periodos)
                 {
-                    if (restante <= 0.005m) break;
+                    if (restanteMora <= 0.005m) break;
                     var pendientePeriodo = MoraPendiente(periodo);
                     if (pendientePeriodo <= 0.005m) continue;
-
-                    var tomar = Math.Min(restante, pendientePeriodo);
+                    var tomar = Math.Min(restanteMora, pendientePeriodo);
                     periodo.mora_condonada += tomar;
-                    restante -= tomar;
-                    periodosAfectados++;
+                    restanteMora -= tomar;
+                    periodosMoraAfectados++;
                 }
 
                 await _context.SaveChangesAsync();
 
-                // Reconstruir de nuevo: refleja la condonación en interes_moratorio/
-                // estatus (p.ej. puede pasar a LIQUIDADO si ya no queda nada pendiente).
+                // Reconstruir de nuevo: refleja la condonación en estado_pago/saldo_actual/
+                // interes_moratorio/estatus (p.ej. puede pasar a LIQUIDADO).
                 await _motorRecalculo.Reconstruir(id);
 
                 var prestamoActualizado = await _context.Prestamos.FindAsync(id);
                 var periodosDespues = await _context.PeriodosAmortizacion
-                    .Where(p => p.prestamo_id == id)
-                    .ToListAsync();
+                    .Where(p => p.prestamo_id == id).ToListAsync();
+                var acumDespues = await _motorPago.CargarAcumPorPeriodo(id);
+                AplicacionPagoService.AcumPd AcumDespues(int pid) =>
+                    acumDespues.GetValueOrDefault(pid, new AplicacionPagoService.AcumPd(0, 0, 0));
+                var creditoPendienteDespues = periodosDespues
+                    .Where(p => p.estado_pago == 1)
+                    .Sum(p => Math.Max(0m, p.abono_capital  - AcumDespues(p.periodo_id).Cap - p.capital_condonado)
+                             + Math.Max(0m, p.interes_normal - AcumDespues(p.periodo_id).Int - p.interes_condonado)
+                             + Math.Max(0m, p.interes_iva    - AcumDespues(p.periodo_id).Iva - p.iva_condonado));
                 var moraPendienteDespues = periodosDespues.Sum(MoraPendiente);
 
                 var idClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
                 int.TryParse(idClaim, out var usuarioId);
 
-                var descripcion = $"Mora condonada en crédito #{id}: {dto.monto:C2} " +
-                                   $"({periodosAfectados} periodo(s)). Mora antes: {moraPendienteAntes:C2} → " +
-                                   $"después: {moraPendienteDespues:C2}. Motivo: {dto.motivo.Trim()}";
+                var partesDescripcion = new List<string>();
+                if (dto.montoCredito > 0)
+                    partesDescripcion.Add(
+                        $"Crédito condonado: {dto.montoCredito:C2} ({periodosCreditoAfectados.Count} periodo(s)). " +
+                        $"Saldo crédito antes: {creditoPendienteAntes:C2} → después: {creditoPendienteDespues:C2}.");
+                if (dto.montoMora > 0)
+                    partesDescripcion.Add(
+                        $"Mora condonada: {dto.montoMora:C2} ({periodosMoraAfectados} periodo(s)). " +
+                        $"Mora antes: {moraPendienteAntes:C2} → después: {moraPendienteDespues:C2}.");
+
+                var descripcion = $"{string.Join(" ", partesDescripcion)} Crédito #{id}. Motivo: {dto.motivo.Trim()}";
+
+                var tipoActividad = dto.montoCredito > 0
+                    ? ActivityType.CREDITO_CONDONADO
+                    : ActivityType.MORA_CONDONADA;
 
                 await _activityService.CreateActivity(
-                    ActivityType.MORA_CONDONADA,
+                    tipoActividad,
                     prestamo.cliente_id,
-                    dto.monto,
+                    dto.montoCredito + dto.montoMora,
                     NotificationLevel.NEUTRAL,
                     descripcion,
                     usuarioId == 0 ? null : usuarioId
@@ -1380,11 +1480,15 @@ namespace ApiEjemplo.Controllers
 
                 return Ok(new
                 {
-                    message = "Mora condonada correctamente.",
+                    message = "Condonación aplicada correctamente.",
                     prestamo_id = id,
                     cliente_id = prestamo.cliente_id,
-                    periodos_afectados = periodosAfectados,
-                    monto_condonado = dto.monto,
+                    periodos_credito_afectados = periodosCreditoAfectados.Count,
+                    periodos_mora_afectados = periodosMoraAfectados,
+                    monto_credito_condonado = dto.montoCredito,
+                    monto_mora_condonado = dto.montoMora,
+                    credito_pendiente_antes = creditoPendienteAntes,
+                    credito_pendiente_despues = creditoPendienteDespues,
                     mora_pendiente_antes = moraPendienteAntes,
                     mora_pendiente_despues = moraPendienteDespues,
                     estatus_nuevo = prestamoActualizado?.estatus.ToString(),
