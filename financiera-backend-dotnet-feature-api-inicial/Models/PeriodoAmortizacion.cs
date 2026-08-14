@@ -50,6 +50,18 @@ namespace ApiEjemplo.Models
         [Column(TypeName = "decimal(16,4)")]
         public decimal mora_condonada { get; set; } = 0;
 
+        // MONEYPINE-FIX: condonación de crédito (capital/interés/IVA) — mismo patrón durable
+        // que mora_condonada. Reconstruir() sembra sus acumuladores capC/intC/ivaC con estos
+        // valores en vez de resetearlos a 0, para que una condonación de crédito no reaparezca.
+        [Column(TypeName = "decimal(16,4)")]
+        public decimal capital_condonado { get; set; } = 0;
+
+        [Column(TypeName = "decimal(16,4)")]
+        public decimal interes_condonado { get; set; } = 0;
+
+        [Column(TypeName = "decimal(16,4)")]
+        public decimal iva_condonado { get; set; } = 0;
+
         [Column(TypeName = "decimal(16,4)")]
         public decimal gasto_cobranza { get; set; }
 
