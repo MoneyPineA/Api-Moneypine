@@ -4,6 +4,7 @@ using ApiEjemplo.Enums;
 using ApiEjemplo.Models;
 using ApiEjemplo.Security;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -34,6 +35,8 @@ namespace ApiEjemplo.Controllers
         // El FallbackPolicy en Program.cs exige autenticacion por defecto; sin este
         // atributo nadie podria loguearse (no hay JWT antes de tener JWT).
         [AllowAnonymous]
+        // MONEYPINE-SEC: limite de intentos por IP contra fuerza bruta.
+        [EnableRateLimiting("login")]
         [HttpPost("login")]
         public async Task<IActionResult> Login(LoginRequestDto request)
         {

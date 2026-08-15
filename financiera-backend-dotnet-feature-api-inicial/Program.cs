@@ -8,10 +8,17 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using System.Text.Json.Serialization;
+using System.Threading.RateLimiting;
 using Microsoft.OpenApi.Models;
 
 
 var builder = WebApplication.CreateBuilder(args);
+
+// MONEYPINE-SEC: Kestrel anade "Server: Kestrel" despues de cualquier middleware,
+// asi que quitarlo desde el pipeline no funciona: hay que apagarlo en su origen.
+// Es una pista gratuita sobre la tecnologia del servidor para quien busque
+// vulnerabilidades conocidas de esa version.
+builder.WebHost.ConfigureKestrel(o => o.AddServerHeader = false);
 
 // =======================
 // CORS (AGREGADO)
@@ -100,6 +107,25 @@ builder.Services.AddScoped<ITenantContext, TenantContext>();
 // =======================
 var jwtKey = builder.Configuration["Jwt:Key"];
 
+// MONEYPINE-SEC: la clave que firma los tokens. Con multi-tenant el tenant viaja
+// DENTRO del token, asi que quien conozca la clave se firma uno con el prestamista_id
+// que quiera y entra como cualquier financiera. Se rechaza arrancar con la clave de
+// ejemplo o con una demasiado corta: en produccion la clave real llega por variable
+// de entorno (Jwt__Key en Railway), nunca desde el appsettings.json versionado.
+// Solo se exige fuera de Development para no estorbar el arranque local.
+if (!builder.Environment.IsDevelopment())
+{
+    if (string.IsNullOrWhiteSpace(jwtKey)
+        || jwtKey.Contains("CAMBIALA")
+        || jwtKey.Contains("SUPER_SECRETA")
+        || jwtKey.Length < 32)
+    {
+        throw new InvalidOperationException(
+            "Jwt:Key no configurada o insegura. Define una clave robusta (>= 32 caracteres) " +
+            "en la variable de entorno Jwt__Key antes de arrancar en produccion.");
+    }
+}
+
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 .AddJwtBearer(options =>
 {
@@ -155,6 +181,33 @@ builder.Services.AddScoped<ListaNegraService>();
 // Peticiones de roles no-ADMIN para ejecutar acciones sensibles
 builder.Services.AddScoped<SolicitudAprobacionService>();
 
+// MONEYPINE-SEC: limite de intentos. Sin esto, /api/auth/login acepta peticiones
+// sin tope: se comprobo lanzando 6 intentos seguidos contra produccion y las 6
+// respondieron 401, ninguna 429. Con un diccionario y tiempo, eso es una cuenta
+// comprometida. La particion es por IP para no dejar que un atacante bloquee a
+// un usuario legitimo simplemente fallando con su correo.
+builder.Services.AddRateLimiter(options =>
+{
+    options.AddPolicy("login", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "desconocida",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 10,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+            }));
+
+    options.OnRejected = async (context, ct) =>
+    {
+        context.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+        await context.HttpContext.Response.WriteAsJsonAsync(new
+        {
+            message = "Demasiados intentos. Espera un minuto e inténtalo de nuevo."
+        }, ct);
+    };
+});
+
 // MONEYPINE-FIX: cron job diario — reporta automáticamente a buró los créditos con mora >= 90 días
 builder.Services.AddHostedService<BuroAutoReporteService>();
 
@@ -208,6 +261,41 @@ var app = builder.Build();
 
 // Pipeline
 
+// MONEYPINE-SEC: cabeceras de seguridad en TODA respuesta. Van lo antes posible
+// en el pipeline para cubrir tambien las respuestas de error.
+app.Use(async (context, next) =>
+{
+    var h = context.Response.Headers;
+
+    // Impide que el navegador "adivine" el tipo de contenido: sin esto, un
+    // archivo subido por un cliente podria interpretarse como script.
+    h["X-Content-Type-Options"] = "nosniff";
+
+    // La API no se muestra en iframes; corta el clickjacking.
+    h["X-Frame-Options"] = "DENY";
+
+    // No filtrar la URL completa (que lleva ids) hacia sitios externos.
+    h["Referrer-Policy"] = "no-referrer";
+
+    // Esto es una API JSON: no necesita ejecutar nada ni cargar recursos.
+    // EXCEPCION: la interfaz de Swagger es una pagina HTML real con su propio CSS y
+    // JS, asi que "default-src 'none'" la dejaba completamente en blanco. Solo existe
+    // en Development (en produccion Swagger no se monta), asi que la excepcion no
+    // relaja nada de cara al publico.
+    var esSwagger = context.Request.Path.StartsWithSegments("/swagger");
+    h["Content-Security-Policy"] = (esSwagger && app.Environment.IsDevelopment())
+        ? "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data:"
+        : "default-src 'none'; frame-ancestors 'none'";
+
+    h["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()";
+
+    // Oculta la tecnologia del servidor: menos pistas para automatizar ataques.
+    h.Remove("Server");
+    h.Remove("X-Powered-By");
+
+    await next();
+});
+
 // MONEYPINE-FIX: exception handler ANTES de CORS para que los 500 incluyan el header CORS
 app.UseExceptionHandler(errorApp =>
 {
@@ -216,21 +304,38 @@ app.UseExceptionHandler(errorApp =>
         context.Response.StatusCode = 500;
         context.Response.ContentType = "application/json";
         var ex = context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>();
-        await context.Response.WriteAsJsonAsync(new
+
+        // MONEYPINE-SEC: en produccion NO se devuelve el detalle de la excepcion.
+        // Antes se enviaban Message e InnerException, que revelan nombres de
+        // tablas y columnas, rutas del servidor y fragmentos de la cadena de
+        // conexion — un mapa gratis del sistema para quien provoque un error.
+        // Se registra en el log del servidor, que es donde debe estar.
+        if (app.Environment.IsDevelopment())
         {
-            error = "Error interno del servidor",
-            message = ex?.Error?.Message,
-            inner = ex?.Error?.InnerException?.Message
-        });
+            await context.Response.WriteAsJsonAsync(new
+            {
+                error = "Error interno del servidor",
+                message = ex?.Error?.Message,
+                inner = ex?.Error?.InnerException?.Message
+            });
+        }
+        else
+        {
+            app.Logger.LogError(ex?.Error, "Error no controlado en {Ruta}", context.Request.Path);
+            await context.Response.WriteAsJsonAsync(new
+            {
+                error = "Error interno del servidor",
+                message = "Ocurrió un error inesperado. Intenta de nuevo o contacta al administrador."
+            });
+        }
     });
 });
 
+// MONEYPINE-SEC: Swagger SOLO en desarrollo. Las dos ramas del if hacian lo
+// mismo, asi que en produccion quedaban publicados 98 endpoints con su forma
+// exacta — incluidas las rutas administrativas — sin pedir autenticacion.
+// Es el mapa completo de la API servido a cualquiera.
 if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
-else
 {
     app.UseSwagger();
     app.UseSwaggerUI();
@@ -253,6 +358,11 @@ app.UseAuthentication();
 // cada controller, necesita el tenant ya resuelto). Fase 1 — Parte 4.5.
 app.UseMiddleware<TenantResolutionMiddleware>();
 
+// MONEYPINE-MT: comprueba que el subdominio (puebla.moneypine.com.mx) no contradiga
+// al tenant del token. Va DESPUÉS de TenantResolution porque contrasta contra el
+// tenant ya resuelto; el host jamás lo decide. Ver Tenancy/HostTenantGuardMiddleware.cs.
+app.UseMiddleware<ApiEjemplo.Tenancy.HostTenantGuardMiddleware>();
+
 // MONEYPINE-MT: Fase 3 — confina PLATFORM_ADMIN a /api/platform/* y /api/auth/*.
 // Justo después del middleware de tenant (necesita EsPlataforma ya resuelto vía
 // el rol del token) y antes de UseAuthorization. Ver Tenancy/PlatformScopeMiddleware.cs.
@@ -264,6 +374,9 @@ app.UseAuthorization();
 app.UseMiddleware<PresenceTrackingMiddleware>();
 
 // Habilitar Controllers
+// MONEYPINE-SEC: activa las politicas de limite declaradas arriba.
+app.UseRateLimiter();
+
 app.MapControllers();
 
 // =======================
