@@ -238,8 +238,10 @@ namespace ApiEjemplo.Controllers
         [HttpGet("ejecutivos")]
         public async Task<IActionResult> GetEjecutivos()
         {
+            // El admin de plataforma no cobra cartera de nadie: no debe aparecer
+            // como opcion en el filtro "Ejecutivo".
             var ejecutivos = await _context.Usuarios
-                .Where(u => u.rol != RolUsuario.CLIENTE)
+                .Where(u => u.rol != RolUsuario.CLIENTE && u.rol != RolUsuario.PLATFORM_ADMIN)
                 .OrderBy(u => u.nombre)
                 .Select(u => new
                 {
