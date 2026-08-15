@@ -53,23 +53,22 @@ namespace ApiEjemplo.Services
         {
             try
             {
-                using var scope = _services.CreateScope();
+                // MONEYPINE-MT: la lista negra es de cada prestamista. Fijado al tenant 1,
+                // la de cualquier otro no se sincronizaba nunca.
+                await TenantJobRunner.PorCadaTenantAsync(
+                    _services.GetRequiredService<IServiceScopeFactory>(), _logger, "ListaNegraSyncService",
+                    async (scope, tenantId) =>
+                    {
+                        var svc = scope.ServiceProvider.GetRequiredService<ListaNegraService>();
 
-                // MONEYPINE-MT: sin request/JWT no hay tenant resuelto por el middleware.
-                // Se fija al tenant 1 (único existente en Fase 1) para no dejar el query
-                // filter global vaciando las consultas de ListaNegraService en silencio.
-                // DEUDA: iterar por prestamista cuando haya más de uno (Fase 3/4).
-                scope.ServiceProvider.GetRequiredService<ITenantContext>().Establecer(1);
+                        // usuarioId null: la ejecuto el sistema, no una persona.
+                        var r = await svc.SincronizarAsync(null);
 
-                var svc = scope.ServiceProvider.GetRequiredService<ListaNegraService>();
-
-                // usuarioId null: la ejecuto el sistema, no una persona.
-                var r = await svc.SincronizarAsync(null);
-
-                _logger.LogInformation(
-                    "ListaNegraSyncService: {ag} agregados, {rem} removidos, " +
-                    "{om} omitidos por baja manual.",
-                    r.agregados, r.removidos, r.omitidos_por_baja_manual);
+                        _logger.LogInformation(
+                            "ListaNegraSyncService: prestamista {t} — {ag} agregados, {rem} removidos, " +
+                            "{om} omitidos por baja manual.",
+                            tenantId, r.agregados, r.removidos, r.omitidos_por_baja_manual);
+                    });
             }
             catch (Exception ex)
             {

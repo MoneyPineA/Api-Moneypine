@@ -25,11 +25,21 @@ namespace ApiEjemplo.Tenancy
 
                 if (!esPlataforma && !int.TryParse(claim, out _))
                 {
-                    context.Response.StatusCode = 403;
+                    // 401 y no 403, a proposito. En el despliegue de multi-tenant TODOS
+                    // los usuarios conectados traen un token emitido antes, sin el claim
+                    // prestamista_id. El frontend solo renueva el token cuando recibe 401
+                    // (services/api.js: `if (response.status === 401 ...) tryRefresh()`);
+                    // con 403 se quedaba con la sesion rota, sin refrescar y sin mandar
+                    // al login, hasta que el token caducara solo. Con 401 renueva al
+                    // instante contra /api/auth/refresh —que reemite el claim leyendo
+                    // usuario.prestamista_id— y el usuario no se entera de nada.
+                    // Ademas es lo correcto: un token al que le falta un claim requerido
+                    // es un token invalido, no un permiso insuficiente.
+                    context.Response.StatusCode = 401;
                     context.Response.ContentType = "application/json";
                     await context.Response.WriteAsJsonAsync(new
                     {
-                        message = "Token sin tenant asignado"
+                        message = "Token sin tenant asignado. Vuelve a iniciar sesión."
                     });
                     return;
                 }

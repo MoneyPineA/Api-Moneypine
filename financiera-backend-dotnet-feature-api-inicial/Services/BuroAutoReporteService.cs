@@ -44,17 +44,13 @@ namespace ApiEjemplo.Services
 
             try
             {
-                using var scope = _scopeFactory.CreateScope();
+                // MONEYPINE-MT: una vuelta por prestamista activo. Fijado al tenant 1, la
+                // mora de cualquier otro prestamista no llegaba nunca al buro.
+                await TenantJobRunner.PorCadaTenantAsync(
+                    _scopeFactory, _logger, "BuroAutoReporteService",
+                    async (scope, tenantId) =>
+                {
                 var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-
-                // MONEYPINE-MT: este timer no pasa por TenantResolutionMiddleware (no hay
-                // request/JWT), así que ITenantContext quedaría en PrestamistaId=0 y el
-                // query filter global dejaría db.Prestamos/db.BuroExclusiones/db.BuroAutoReportes
-                // vacíos — el job "correría" sin procesar nada, en silencio. Fase 1 solo
-                // tiene el tenant 1; se fija explícito para no regresar el comportamiento
-                // actual. DEUDA: cuando exista un segundo tenant real, este job debe
-                // iterar sobre cada prestamista activo (Fase 3/4), no asumir el 1.
-                scope.ServiceProvider.GetRequiredService<ITenantContext>().Establecer(1);
 
                 // Leer configuracion_sistema para verificar si reporte automático está activo
                 var conn = db.Database.GetDbConnection();
@@ -64,12 +60,18 @@ namespace ApiEjemplo.Services
                 string reporteActivo = "false";
                 using (var cmd = conn.CreateCommand())
                 {
-                    // MONEYPINE-MT: filtro manual, SQL crudo. Sin el tenant explicito,
-                    // el flag de un prestamista decidiria el auto-reporte a buro de
-                    // todos los demas. El scope ya fijo el tenant unas lineas arriba.
+                    // MONEYPINE-MT: filtro manual, SQL crudo (configuracion_sistema no tiene
+                    // entidad EF, asi que el query filter global no la cubre — invariante I5).
+                    // Sin el tenant explicito, el flag de un prestamista decidiria el
+                    // auto-reporte a buro de todos los demas.
                     cmd.CommandText =
                         "SELECT valor FROM configuracion_sistema " +
-                        "WHERE clave = 'reporte_automatico' AND prestamista_id = 1";
+                        "WHERE clave = 'reporte_automatico' AND prestamista_id = @tenant";
+                    var pTenant = cmd.CreateParameter();
+                    pTenant.ParameterName = "@tenant";
+                    pTenant.Value = tenantId;
+                    cmd.Parameters.Add(pTenant);
+
                     using var reader = await cmd.ExecuteReaderAsync();
                     if (await reader.ReadAsync())
                         reporteActivo = reader.GetString(0);
@@ -77,7 +79,9 @@ namespace ApiEjemplo.Services
 
                 if (reporteActivo != "true")
                 {
-                    _logger.LogInformation("BuroAutoReporteService: reporte_automatico = false, omitiendo.");
+                    _logger.LogInformation(
+                        "BuroAutoReporteService: reporte_automatico = false para el prestamista {t}, omitiendo.",
+                        tenantId);
                     return;
                 }
 
@@ -126,7 +130,10 @@ namespace ApiEjemplo.Services
                 }
 
                 await db.SaveChangesAsync();
-                _logger.LogInformation("BuroAutoReporteService: {n} cliente(s) procesados con mora >= 90 días.", reportados);
+                _logger.LogInformation(
+                    "BuroAutoReporteService: {n} cliente(s) del prestamista {t} con mora >= 90 días.",
+                    reportados, tenantId);
+                });
             }
             catch (Exception ex)
             {
