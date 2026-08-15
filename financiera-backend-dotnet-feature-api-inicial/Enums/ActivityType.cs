@@ -6,6 +6,7 @@ namespace ApiEjemplo.Enums
         CREDIT_APPROVED,
         PAYMENT_OVERDUE,
         MORA_CONDONADA,
+        CREDITO_CONDONADO,
         PAYMENT_DELETED,
         CUSTOM
     }

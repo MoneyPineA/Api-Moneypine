@@ -4,6 +4,7 @@ using ApiEjemplo.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace ApiEjemplo.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260814020632_AddCondonacionCreditoToPeriodoAmortizacion")]
+    partial class AddCondonacionCreditoToPeriodoAmortizacion
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -51,12 +54,7 @@ namespace ApiEjemplo.Migrations
                     b.Property<int?>("UserId")
                         .HasColumnType("int");
 
-                    b.Property<int>("prestamista_id")
-                        .HasColumnType("int");
-
                     b.HasKey("Id");
-
-                    b.HasIndex("prestamista_id");
 
                     b.ToTable("ActivityLogs");
                 });
@@ -80,15 +78,10 @@ namespace ApiEjemplo.Migrations
                         .HasMaxLength(300)
                         .HasColumnType("varchar(300)");
 
-                    b.Property<int>("prestamista_id")
-                        .HasColumnType("int");
-
                     b.Property<decimal>("saldo_pendiente")
                         .HasColumnType("decimal(12,2)");
 
                     b.HasKey("cliente_id", "prestamo_id");
-
-                    b.HasIndex("prestamista_id");
 
                     b.ToTable("buro_auto_reporte");
                 });
@@ -116,13 +109,7 @@ namespace ApiEjemplo.Migrations
                         .HasColumnType("varchar(300)")
                         .HasColumnName("motivo");
 
-                    b.Property<int>("prestamista_id")
-                        .HasColumnType("int")
-                        .HasColumnName("prestamista_id");
-
                     b.HasKey("cliente_id");
-
-                    b.HasIndex("prestamista_id");
 
                     b.ToTable("buro_exclusion");
                 });
@@ -148,7 +135,7 @@ namespace ApiEjemplo.Migrations
                         .HasColumnType("longtext");
 
                     b.Property<string>("clave_cliente")
-                        .HasColumnType("varchar(255)");
+                        .HasColumnType("longtext");
 
                     b.Property<string>("colonia")
                         .HasColumnType("longtext");
@@ -219,9 +206,6 @@ namespace ApiEjemplo.Migrations
                     b.Property<bool>("permitir_acceso_web")
                         .HasColumnType("tinyint(1)");
 
-                    b.Property<int>("prestamista_id")
-                        .HasColumnType("int");
-
                     b.Property<string>("ref_adicional")
                         .HasColumnType("longtext");
 
@@ -257,15 +241,8 @@ namespace ApiEjemplo.Migrations
 
                     b.HasKey("cliente_id");
 
-                    b.HasIndex("prestamista_id")
-                        .HasDatabaseName("ix_cliente_tenant");
-
                     b.HasIndex("usuario_id")
                         .IsUnique();
-
-                    b.HasIndex("prestamista_id", "clave_cliente")
-                        .IsUnique()
-                        .HasDatabaseName("ux_cliente_clave");
 
                     b.ToTable("cliente");
                 });
@@ -293,17 +270,12 @@ namespace ApiEjemplo.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("varchar(50)");
 
-                    b.Property<int>("prestamista_id")
-                        .HasColumnType("int");
-
                     b.Property<int>("usuario_id")
                         .HasColumnType("int");
 
                     b.HasKey("anotacion_id");
 
                     b.HasIndex("cliente_id");
-
-                    b.HasIndex("prestamista_id");
 
                     b.HasIndex("usuario_id");
 
@@ -337,10 +309,6 @@ namespace ApiEjemplo.Migrations
                         .HasColumnType("int")
                         .HasColumnName("orden");
 
-                    b.Property<int>("prestamista_id")
-                        .HasColumnType("int")
-                        .HasColumnName("prestamista_id");
-
                     b.Property<string>("tipo")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -348,8 +316,6 @@ namespace ApiEjemplo.Migrations
                         .HasColumnName("tipo");
 
                     b.HasKey("id");
-
-                    b.HasIndex("prestamista_id");
 
                     b.ToTable("concepto_sistema");
                 });
@@ -389,9 +355,6 @@ namespace ApiEjemplo.Migrations
                     b.Property<decimal>("monto_inicial")
                         .HasColumnType("decimal(12,2)");
 
-                    b.Property<int>("prestamista_id")
-                        .HasColumnType("int");
-
                     b.Property<int>("producto_ahorro_id")
                         .HasColumnType("int");
 
@@ -404,8 +367,6 @@ namespace ApiEjemplo.Migrations
                     b.HasKey("id");
 
                     b.HasIndex("cliente_id");
-
-                    b.HasIndex("prestamista_id");
 
                     b.HasIndex("producto_ahorro_id");
 
@@ -466,13 +427,7 @@ namespace ApiEjemplo.Migrations
                         .HasColumnType("int")
                         .HasColumnName("usuario_id");
 
-                    b.Property<int>("prestamista_id")
-                        .HasColumnType("int")
-                        .HasColumnName("prestamista_id");
-
                     b.HasKey("DocumentoId");
-
-                    b.HasIndex("prestamista_id");
 
                     b.ToTable("documento");
                 });
@@ -518,9 +473,6 @@ namespace ApiEjemplo.Migrations
                         .HasMaxLength(255)
                         .HasColumnType("varchar(255)");
 
-                    b.Property<int>("prestamista_id")
-                        .HasColumnType("int");
-
                     b.Property<long>("tamano_bytes")
                         .HasColumnType("bigint");
 
@@ -533,8 +485,6 @@ namespace ApiEjemplo.Migrations
                         .HasColumnType("int");
 
                     b.HasKey("formato_id");
-
-                    b.HasIndex("prestamista_id");
 
                     b.HasIndex("usuario_id");
 
@@ -560,12 +510,7 @@ namespace ApiEjemplo.Migrations
                     b.Property<decimal>("monto")
                         .HasColumnType("decimal(12,2)");
 
-                    b.Property<int>("prestamista_id")
-                        .HasColumnType("int");
-
                     b.HasKey("gasto_id");
-
-                    b.HasIndex("prestamista_id");
 
                     b.ToTable("gastos_recientes");
                 });
@@ -594,16 +539,9 @@ namespace ApiEjemplo.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("varchar(100)");
 
-                    b.Property<int>("prestamista_id")
-                        .HasColumnType("int");
-
                     b.HasKey("gerencia_id");
 
                     b.HasIndex("gerente_id");
-
-                    b.HasIndex("prestamista_id", "codigo")
-                        .IsUnique()
-                        .HasDatabaseName("ux_gerencia_codigo");
 
                     b.ToTable("gerencia");
                 });
@@ -622,9 +560,6 @@ namespace ApiEjemplo.Migrations
                     b.Property<DateTime>("fecha_registro")
                         .HasColumnType("datetime(6)");
 
-                    b.Property<int>("prestamista_id")
-                        .HasColumnType("int");
-
                     b.Property<int>("prestamo_id")
                         .HasColumnType("int");
 
@@ -637,8 +572,6 @@ namespace ApiEjemplo.Migrations
                         .HasColumnType("int");
 
                     b.HasKey("gestion_id");
-
-                    b.HasIndex("prestamista_id");
 
                     b.HasIndex("prestamo_id");
 
@@ -689,9 +622,6 @@ namespace ApiEjemplo.Migrations
                     b.Property<int>("plazo_meses")
                         .HasColumnType("int");
 
-                    b.Property<int>("prestamista_id")
-                        .HasColumnType("int");
-
                     b.Property<decimal>("tasa_interes")
                         .HasColumnType("decimal(5,2)");
 
@@ -716,8 +646,6 @@ namespace ApiEjemplo.Migrations
                         .HasColumnType("varchar(20)");
 
                     b.HasKey("grupo_id");
-
-                    b.HasIndex("prestamista_id");
 
                     b.ToTable("grupo");
                 });
@@ -794,10 +722,6 @@ namespace ApiEjemplo.Migrations
                         .HasColumnType("varchar(50)")
                         .HasColumnName("origen");
 
-                    b.Property<int>("prestamista_id")
-                        .HasColumnType("int")
-                        .HasColumnName("prestamista_id");
-
                     b.Property<int?>("prestamo_id")
                         .HasColumnType("int")
                         .HasColumnName("prestamo_id");
@@ -807,8 +731,6 @@ namespace ApiEjemplo.Migrations
                     b.HasIndex("cliente_id");
 
                     b.HasIndex("estado");
-
-                    b.HasIndex("prestamista_id");
 
                     b.HasIndex("prestamo_id");
 
@@ -841,9 +763,6 @@ namespace ApiEjemplo.Migrations
                     b.Property<decimal>("monto")
                         .HasColumnType("decimal(12,2)");
 
-                    b.Property<int>("prestamista_id")
-                        .HasColumnType("int");
-
                     b.Property<string>("tipo")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -852,8 +771,6 @@ namespace ApiEjemplo.Migrations
                     b.HasKey("id");
 
                     b.HasIndex("cuenta_ahorro_id");
-
-                    b.HasIndex("prestamista_id");
 
                     b.ToTable("movimiento_ahorro");
                 });
@@ -876,9 +793,6 @@ namespace ApiEjemplo.Migrations
                     b.Property<DateTime>("fecha_registro")
                         .HasColumnType("datetime(6)");
 
-                    b.Property<int>("prestamista_id")
-                        .HasColumnType("int");
-
                     b.Property<int>("prestamo_id")
                         .HasColumnType("int");
 
@@ -888,8 +802,6 @@ namespace ApiEjemplo.Migrations
                         .HasColumnType("varchar(200)");
 
                     b.HasKey("notificacion_id");
-
-                    b.HasIndex("prestamista_id");
 
                     b.HasIndex("prestamo_id");
 
@@ -920,12 +832,7 @@ namespace ApiEjemplo.Migrations
                     b.Property<int>("UsuarioId")
                         .HasColumnType("int");
 
-                    b.Property<int>("prestamista_id")
-                        .HasColumnType("int");
-
                     b.HasKey("Id");
-
-                    b.HasIndex("prestamista_id");
 
                     b.ToTable("notifications", (string)null);
                 });
@@ -968,9 +875,6 @@ namespace ApiEjemplo.Migrations
                     b.Property<decimal>("mora_pagada")
                         .HasColumnType("decimal(10,2)");
 
-                    b.Property<int>("prestamista_id")
-                        .HasColumnType("int");
-
                     b.Property<int>("prestamo_id")
                         .HasColumnType("int");
 
@@ -984,9 +888,6 @@ namespace ApiEjemplo.Migrations
                     b.HasKey("pago_id");
 
                     b.HasIndex("prestamo_id");
-
-                    b.HasIndex("prestamista_id", "fecha_pago")
-                        .HasDatabaseName("ix_pago_tenant");
 
                     b.ToTable("pago");
                 });
@@ -1023,9 +924,6 @@ namespace ApiEjemplo.Migrations
                     b.Property<int?>("periodo_id")
                         .HasColumnType("int");
 
-                    b.Property<int>("prestamista_id")
-                        .HasColumnType("int");
-
                     b.Property<int>("prestamo_id")
                         .HasColumnType("int");
 
@@ -1038,8 +936,6 @@ namespace ApiEjemplo.Migrations
                     b.HasIndex("pago_id");
 
                     b.HasIndex("periodo_id");
-
-                    b.HasIndex("prestamista_id");
 
                     b.HasIndex("prestamo_id");
 
@@ -1108,9 +1004,6 @@ namespace ApiEjemplo.Migrations
                     b.Property<int>("periodo")
                         .HasColumnType("int");
 
-                    b.Property<int>("prestamista_id")
-                        .HasColumnType("int");
-
                     b.Property<int>("prestamo_id")
                         .HasColumnType("int");
 
@@ -1119,110 +1012,9 @@ namespace ApiEjemplo.Migrations
 
                     b.HasKey("periodo_id");
 
-                    b.HasIndex("prestamista_id");
-
                     b.HasIndex("prestamo_id");
 
                     b.ToTable("periodo_amortizacion");
-                });
-
-            modelBuilder.Entity("ApiEjemplo.Models.Prestamista", b =>
-                {
-                    b.Property<int>("prestamista_id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("prestamista_id"));
-
-                    b.Property<string>("ciudad")
-                        .HasMaxLength(100)
-                        .HasColumnType("varchar(100)");
-
-                    b.Property<string>("color_primario")
-                        .HasMaxLength(7)
-                        .HasColumnType("varchar(7)");
-
-                    b.Property<string>("config_json")
-                        .HasColumnType("longtext");
-
-                    b.Property<string>("correo_contacto")
-                        .HasMaxLength(255)
-                        .HasColumnType("varchar(255)");
-
-                    b.Property<string>("direccion")
-                        .HasMaxLength(300)
-                        .HasColumnType("varchar(300)");
-
-                    b.Property<string>("estado")
-                        .HasMaxLength(100)
-                        .HasColumnType("varchar(100)");
-
-                    b.Property<string>("estatus")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("longtext")
-                        .HasDefaultValue("ACTIVO");
-
-                    b.Property<DateTime>("fecha_alta")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<DateTime?>("fecha_baja")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("logo_url")
-                        .HasMaxLength(300)
-                        .HasColumnType("varchar(300)");
-
-                    b.Property<string>("moneda")
-                        .IsRequired()
-                        .HasMaxLength(3)
-                        .HasColumnType("varchar(3)");
-
-                    b.Property<string>("nombre_comercial")
-                        .IsRequired()
-                        .HasMaxLength(150)
-                        .HasColumnType("varchar(150)");
-
-                    b.Property<string>("notas")
-                        .HasColumnType("longtext");
-
-                    b.Property<string>("persona_contacto")
-                        .HasMaxLength(150)
-                        .HasColumnType("varchar(150)");
-
-                    b.Property<string>("plan")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("varchar(30)");
-
-                    b.Property<string>("razon_social")
-                        .HasMaxLength(200)
-                        .HasColumnType("varchar(200)");
-
-                    b.Property<string>("rfc")
-                        .HasMaxLength(20)
-                        .HasColumnType("varchar(20)");
-
-                    b.Property<string>("slug")
-                        .IsRequired()
-                        .HasMaxLength(40)
-                        .HasColumnType("varchar(40)");
-
-                    b.Property<string>("telefono_contacto")
-                        .HasMaxLength(30)
-                        .HasColumnType("varchar(30)");
-
-                    b.Property<string>("zona_horaria")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("varchar(50)");
-
-                    b.HasKey("prestamista_id");
-
-                    b.HasIndex("slug")
-                        .IsUnique();
-
-                    b.ToTable("prestamista");
                 });
 
             modelBuilder.Entity("ApiEjemplo.Models.Prestamo", b =>
@@ -1256,7 +1048,7 @@ namespace ApiEjemplo.Migrations
                     b.Property<string>("estatus")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("varchar(255)")
+                        .HasColumnType("longtext")
                         .HasDefaultValue("ACTIVO");
 
                     b.Property<DateTime>("fecha_creacion")
@@ -1340,9 +1132,6 @@ namespace ApiEjemplo.Migrations
                     b.Property<int>("plazo_meses")
                         .HasColumnType("int");
 
-                    b.Property<int>("prestamista_id")
-                        .HasColumnType("int");
-
                     b.Property<decimal>("saldo_actual")
                         .HasColumnType("decimal(12,2)");
 
@@ -1389,9 +1178,6 @@ namespace ApiEjemplo.Migrations
 
                     b.HasIndex("grupo_id");
 
-                    b.HasIndex("prestamista_id", "estatus", "fecha_proximo_pago")
-                        .HasDatabaseName("ix_prestamo_tenant");
-
                     b.ToTable("prestamo");
                 });
 
@@ -1406,17 +1192,12 @@ namespace ApiEjemplo.Migrations
                     b.Property<int>("cliente_id_aval")
                         .HasColumnType("int");
 
-                    b.Property<int>("prestamista_id")
-                        .HasColumnType("int");
-
                     b.Property<int>("prestamo_id")
                         .HasColumnType("int");
 
                     b.HasKey("id");
 
                     b.HasIndex("cliente_id_aval");
-
-                    b.HasIndex("prestamista_id");
 
                     b.HasIndex("prestamo_id");
 
@@ -1449,9 +1230,6 @@ namespace ApiEjemplo.Migrations
                     b.Property<int>("plazo_dias")
                         .HasColumnType("int");
 
-                    b.Property<int>("prestamista_id")
-                        .HasColumnType("int");
-
                     b.Property<decimal>("tasa_anual")
                         .HasColumnType("decimal(8,2)");
 
@@ -1463,8 +1241,6 @@ namespace ApiEjemplo.Migrations
                         .HasDefaultValue("VISTA");
 
                     b.HasKey("id");
-
-                    b.HasIndex("prestamista_id");
 
                     b.ToTable("producto_ahorro");
                 });
@@ -1507,9 +1283,6 @@ namespace ApiEjemplo.Migrations
                     b.Property<int>("plazo")
                         .HasColumnType("int");
 
-                    b.Property<int>("prestamista_id")
-                        .HasColumnType("int");
-
                     b.Property<decimal>("tasa_interes")
                         .HasColumnType("decimal(6,2)");
 
@@ -1519,8 +1292,6 @@ namespace ApiEjemplo.Migrations
                         .HasColumnType("varchar(20)");
 
                     b.HasKey("id");
-
-                    b.HasIndex("prestamista_id");
 
                     b.ToTable("producto_credito");
                 });
@@ -1590,17 +1361,11 @@ namespace ApiEjemplo.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("varchar(200)");
 
-                    b.Property<int>("prestamista_id")
-                        .HasColumnType("int");
-
                     b.HasKey("ruta_id");
 
                     b.HasIndex("asesor_id");
 
                     b.HasIndex("gerencia_id");
-
-                    b.HasIndex("prestamista_id", "codigo")
-                        .HasDatabaseName("ix_ruta_codigo");
 
                     b.ToTable("ruta");
                 });
@@ -1644,9 +1409,6 @@ namespace ApiEjemplo.Migrations
                     b.Property<string>("payload")
                         .HasColumnType("longtext");
 
-                    b.Property<int>("prestamista_id")
-                        .HasColumnType("int");
-
                     b.Property<string>("respuesta")
                         .HasMaxLength(1000)
                         .HasColumnType("varchar(1000)");
@@ -1666,8 +1428,6 @@ namespace ApiEjemplo.Migrations
                         .HasColumnType("varchar(30)");
 
                     b.HasKey("id");
-
-                    b.HasIndex("prestamista_id");
 
                     b.HasIndex("resuelta_por");
 
@@ -1692,7 +1452,7 @@ namespace ApiEjemplo.Migrations
 
                     b.Property<string>("correo")
                         .IsRequired()
-                        .HasColumnType("varchar(255)");
+                        .HasColumnType("longtext");
 
                     b.Property<string>("estado")
                         .IsRequired()
@@ -1711,9 +1471,6 @@ namespace ApiEjemplo.Migrations
                         .IsRequired()
                         .HasColumnType("longtext");
 
-                    b.Property<int>("prestamista_id")
-                        .HasColumnType("int");
-
                     b.Property<string>("rol")
                         .IsRequired()
                         .HasColumnType("longtext");
@@ -1730,47 +1487,11 @@ namespace ApiEjemplo.Migrations
 
                     b.HasKey("usuario_id");
 
-                    b.HasIndex("prestamista_id", "correo")
-                        .HasDatabaseName("ix_usuario_correo");
-
                     b.ToTable("usuario");
-                });
-
-            modelBuilder.Entity("ApiEjemplo.Models.ActivityLog", b =>
-                {
-                    b.HasOne("ApiEjemplo.Models.Prestamista", null)
-                        .WithMany()
-                        .HasForeignKey("prestamista_id")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("ApiEjemplo.Models.BuroAutoReporte", b =>
-                {
-                    b.HasOne("ApiEjemplo.Models.Prestamista", null)
-                        .WithMany()
-                        .HasForeignKey("prestamista_id")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("ApiEjemplo.Models.BuroExclusion", b =>
-                {
-                    b.HasOne("ApiEjemplo.Models.Prestamista", null)
-                        .WithMany()
-                        .HasForeignKey("prestamista_id")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
                 });
 
             modelBuilder.Entity("ApiEjemplo.Models.Cliente", b =>
                 {
-                    b.HasOne("ApiEjemplo.Models.Prestamista", null)
-                        .WithMany()
-                        .HasForeignKey("prestamista_id")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
                     b.HasOne("ApiEjemplo.Models.Usuario", "Usuario")
                         .WithOne()
                         .HasForeignKey("ApiEjemplo.Models.Cliente", "usuario_id")
@@ -1788,12 +1509,6 @@ namespace ApiEjemplo.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("ApiEjemplo.Models.Prestamista", null)
-                        .WithMany()
-                        .HasForeignKey("prestamista_id")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
                     b.HasOne("ApiEjemplo.Models.Usuario", "Usuario")
                         .WithMany()
                         .HasForeignKey("usuario_id")
@@ -1805,26 +1520,11 @@ namespace ApiEjemplo.Migrations
                     b.Navigation("Usuario");
                 });
 
-            modelBuilder.Entity("ApiEjemplo.Models.ConceptoSistema", b =>
-                {
-                    b.HasOne("ApiEjemplo.Models.Prestamista", null)
-                        .WithMany()
-                        .HasForeignKey("prestamista_id")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-                });
-
             modelBuilder.Entity("ApiEjemplo.Models.CuentaAhorro", b =>
                 {
                     b.HasOne("ApiEjemplo.Models.Cliente", "Cliente")
                         .WithMany()
                         .HasForeignKey("cliente_id")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("ApiEjemplo.Models.Prestamista", null)
-                        .WithMany()
-                        .HasForeignKey("prestamista_id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
@@ -1839,23 +1539,8 @@ namespace ApiEjemplo.Migrations
                     b.Navigation("Producto");
                 });
 
-            modelBuilder.Entity("ApiEjemplo.Models.Documento", b =>
-                {
-                    b.HasOne("ApiEjemplo.Models.Prestamista", null)
-                        .WithMany()
-                        .HasForeignKey("prestamista_id")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-                });
-
             modelBuilder.Entity("ApiEjemplo.Models.FormatoDocumento", b =>
                 {
-                    b.HasOne("ApiEjemplo.Models.Prestamista", null)
-                        .WithMany()
-                        .HasForeignKey("prestamista_id")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
                     b.HasOne("ApiEjemplo.Models.Usuario", "Usuario")
                         .WithMany()
                         .HasForeignKey("usuario_id")
@@ -1865,15 +1550,6 @@ namespace ApiEjemplo.Migrations
                     b.Navigation("Usuario");
                 });
 
-            modelBuilder.Entity("ApiEjemplo.Models.GastoReciente", b =>
-                {
-                    b.HasOne("ApiEjemplo.Models.Prestamista", null)
-                        .WithMany()
-                        .HasForeignKey("prestamista_id")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-                });
-
             modelBuilder.Entity("ApiEjemplo.Models.Gerencia", b =>
                 {
                     b.HasOne("ApiEjemplo.Models.Usuario", "Gerente")
@@ -1881,23 +1557,11 @@ namespace ApiEjemplo.Migrations
                         .HasForeignKey("gerente_id")
                         .OnDelete(DeleteBehavior.SetNull);
 
-                    b.HasOne("ApiEjemplo.Models.Prestamista", null)
-                        .WithMany()
-                        .HasForeignKey("prestamista_id")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
                     b.Navigation("Gerente");
                 });
 
             modelBuilder.Entity("ApiEjemplo.Models.GestionCobranza", b =>
                 {
-                    b.HasOne("ApiEjemplo.Models.Prestamista", null)
-                        .WithMany()
-                        .HasForeignKey("prestamista_id")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
                     b.HasOne("ApiEjemplo.Models.Prestamo", "Prestamo")
                         .WithMany()
                         .HasForeignKey("prestamo_id")
@@ -1914,26 +1578,11 @@ namespace ApiEjemplo.Migrations
                     b.Navigation("Prestamo");
                 });
 
-            modelBuilder.Entity("ApiEjemplo.Models.Grupo", b =>
-                {
-                    b.HasOne("ApiEjemplo.Models.Prestamista", null)
-                        .WithMany()
-                        .HasForeignKey("prestamista_id")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-                });
-
             modelBuilder.Entity("ApiEjemplo.Models.ListaNegra", b =>
                 {
                     b.HasOne("ApiEjemplo.Models.Cliente", "Cliente")
                         .WithMany()
                         .HasForeignKey("cliente_id")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("ApiEjemplo.Models.Prestamista", null)
-                        .WithMany()
-                        .HasForeignKey("prestamista_id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
@@ -1955,23 +1604,11 @@ namespace ApiEjemplo.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("ApiEjemplo.Models.Prestamista", null)
-                        .WithMany()
-                        .HasForeignKey("prestamista_id")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
                     b.Navigation("Cuenta");
                 });
 
             modelBuilder.Entity("ApiEjemplo.Models.NotificacionAgendada", b =>
                 {
-                    b.HasOne("ApiEjemplo.Models.Prestamista", null)
-                        .WithMany()
-                        .HasForeignKey("prestamista_id")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
                     b.HasOne("ApiEjemplo.Models.Prestamo", "Prestamo")
                         .WithMany()
                         .HasForeignKey("prestamo_id")
@@ -1981,23 +1618,8 @@ namespace ApiEjemplo.Migrations
                     b.Navigation("Prestamo");
                 });
 
-            modelBuilder.Entity("ApiEjemplo.Models.Notification", b =>
-                {
-                    b.HasOne("ApiEjemplo.Models.Prestamista", null)
-                        .WithMany()
-                        .HasForeignKey("prestamista_id")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-                });
-
             modelBuilder.Entity("ApiEjemplo.Models.Pago", b =>
                 {
-                    b.HasOne("ApiEjemplo.Models.Prestamista", null)
-                        .WithMany()
-                        .HasForeignKey("prestamista_id")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
                     b.HasOne("ApiEjemplo.Models.Prestamo", "Prestamo")
                         .WithMany("Pagos")
                         .HasForeignKey("prestamo_id")
@@ -2020,12 +1642,6 @@ namespace ApiEjemplo.Migrations
                         .HasForeignKey("periodo_id")
                         .OnDelete(DeleteBehavior.SetNull);
 
-                    b.HasOne("ApiEjemplo.Models.Prestamista", null)
-                        .WithMany()
-                        .HasForeignKey("prestamista_id")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
                     b.HasOne("ApiEjemplo.Models.Prestamo", "Prestamo")
                         .WithMany()
                         .HasForeignKey("prestamo_id")
@@ -2041,12 +1657,6 @@ namespace ApiEjemplo.Migrations
 
             modelBuilder.Entity("ApiEjemplo.Models.PeriodoAmortizacion", b =>
                 {
-                    b.HasOne("ApiEjemplo.Models.Prestamista", null)
-                        .WithMany()
-                        .HasForeignKey("prestamista_id")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
                     b.HasOne("ApiEjemplo.Models.Prestamo", "Prestamo")
                         .WithMany()
                         .HasForeignKey("prestamo_id")
@@ -2073,12 +1683,6 @@ namespace ApiEjemplo.Migrations
                         .HasForeignKey("grupo_id")
                         .OnDelete(DeleteBehavior.SetNull);
 
-                    b.HasOne("ApiEjemplo.Models.Prestamista", null)
-                        .WithMany()
-                        .HasForeignKey("prestamista_id")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
                     b.Navigation("Cliente");
 
                     b.Navigation("Cobrador");
@@ -2094,12 +1698,6 @@ namespace ApiEjemplo.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.HasOne("ApiEjemplo.Models.Prestamista", null)
-                        .WithMany()
-                        .HasForeignKey("prestamista_id")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
                     b.HasOne("ApiEjemplo.Models.Prestamo", "Prestamo")
                         .WithMany()
                         .HasForeignKey("prestamo_id")
@@ -2109,24 +1707,6 @@ namespace ApiEjemplo.Migrations
                     b.Navigation("Aval");
 
                     b.Navigation("Prestamo");
-                });
-
-            modelBuilder.Entity("ApiEjemplo.Models.ProductoAhorro", b =>
-                {
-                    b.HasOne("ApiEjemplo.Models.Prestamista", null)
-                        .WithMany()
-                        .HasForeignKey("prestamista_id")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("ApiEjemplo.Models.ProductoCredito", b =>
-                {
-                    b.HasOne("ApiEjemplo.Models.Prestamista", null)
-                        .WithMany()
-                        .HasForeignKey("prestamista_id")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
                 });
 
             modelBuilder.Entity("ApiEjemplo.Models.RefreshToken", b =>
@@ -2152,12 +1732,6 @@ namespace ApiEjemplo.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("ApiEjemplo.Models.Prestamista", null)
-                        .WithMany()
-                        .HasForeignKey("prestamista_id")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
                     b.Navigation("Asesor");
 
                     b.Navigation("Gerencia");
@@ -2165,12 +1739,6 @@ namespace ApiEjemplo.Migrations
 
             modelBuilder.Entity("ApiEjemplo.Models.SolicitudAprobacion", b =>
                 {
-                    b.HasOne("ApiEjemplo.Models.Prestamista", null)
-                        .WithMany()
-                        .HasForeignKey("prestamista_id")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
                     b.HasOne("ApiEjemplo.Models.Usuario", "Resolutor")
                         .WithMany()
                         .HasForeignKey("resuelta_por")
@@ -2185,15 +1753,6 @@ namespace ApiEjemplo.Migrations
                     b.Navigation("Resolutor");
 
                     b.Navigation("Solicitante");
-                });
-
-            modelBuilder.Entity("ApiEjemplo.Models.Usuario", b =>
-                {
-                    b.HasOne("ApiEjemplo.Models.Prestamista", null)
-                        .WithMany()
-                        .HasForeignKey("prestamista_id")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
                 });
 
             modelBuilder.Entity("ApiEjemplo.Models.Cliente", b =>

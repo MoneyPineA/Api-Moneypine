@@ -14,7 +14,7 @@ namespace ApiEjemplo.Security
         /// <summary>
         /// MONEYPINE-FIX: condonar mora (parcial o total) quedó restringido a
         /// solo ADMIN — ya no hay tope de GERENTE ni solicitud de por medio,
-        /// ver PrestamoController.CondonarMora. Se deja la constante (no la
+        /// ver PrestamoController.Condonar. Se deja la constante (no la
         /// referencia nadie más) por si se retoma un tope por rol más adelante.
         /// </summary>
         public const decimal CondonacionMoraGerente = 50_000m;

@@ -167,6 +167,7 @@ namespace ApiEjemplo.Controllers
                           pa.fecha_vencimiento, pr.mora_diaria,
                           pa.abono_capital, pa.interes_normal, pa.interes_iva,
                           pa.mora_condonada,
+                          pa.capital_condonado, pa.interes_condonado, pa.iva_condonado,
                       })
                 .ToListAsync();
 
@@ -180,9 +181,10 @@ namespace ApiEjemplo.Controllers
             // MONEYPINE-FIX: desglose del saldo vencido para la grafica de "Informacion en
             // tiempo real" (dona anidada) — capital/interes/IVA pendientes de los periodos
             // realmente vencidos (RETRASO), no el saldo_actual del prestamo completo.
-            decimal capitalVencido = periodsOverdue.Sum(x => x.abono_capital);
-            decimal interesVencido = periodsOverdue.Sum(x => x.interes_normal);
-            decimal ivaVencido     = periodsOverdue.Sum(x => x.interes_iva);
+            // Resta capital_condonado/interes_condonado/iva_condonado (Math.Max evita negativos).
+            decimal capitalVencido = periodsOverdue.Sum(x => Math.Max(0m, x.abono_capital  - x.capital_condonado));
+            decimal interesVencido = periodsOverdue.Sum(x => Math.Max(0m, x.interes_normal - x.interes_condonado));
+            decimal ivaVencido     = periodsOverdue.Sum(x => Math.Max(0m, x.interes_iva    - x.iva_condonado));
 
             return Ok(new
             {

@@ -58,8 +58,10 @@ namespace ApiEjemplo.Services
         }
 
         // ── Struct interno: acumulado real desde pago_detalle por periodo ─
+        // MONEYPINE-FIX: público — PrestamoController.Condonar lo reutiliza para calcular
+        // el crédito (capital+interés+IVA) realmente pendiente, en vez de duplicar la consulta.
 
-        private record AcumPd(decimal Cap, decimal Int, decimal Iva);
+        public record AcumPd(decimal Cap, decimal Int, decimal Iva);
 
         // ─────────────────────────────────────────────────────────────────
         // CargarAcumPorPeriodo
@@ -67,7 +69,7 @@ namespace ApiEjemplo.Services
         // APLICADOS para el préstamo. Usado para calcular pendientes reales.
         // ─────────────────────────────────────────────────────────────────
 
-        private async Task<Dictionary<int, AcumPd>> CargarAcumPorPeriodo(int prestamoId)
+        public async Task<Dictionary<int, AcumPd>> CargarAcumPorPeriodo(int prestamoId)
         {
             var rows = await _context.PagoDetalles
                 .Where(pd => pd.prestamo_id == prestamoId && pd.periodo_id != null)
@@ -196,19 +198,21 @@ namespace ApiEjemplo.Services
                         return Math.Max(0m, m - p.ahorro_por_pago - p.mora_condonada);
                     }),
 
+                // MONEYPINE-FIX: restar capital_condonado/interes_condonado/iva_condonado
+                // (durable) — mismo criterio que Reconstruir() y que mora_condonada.
                 "solo_capital" =>
-                    pendientes.Sum(p => Math.Max(0m, p.abono_capital - A(p.periodo_id).Cap)),
+                    pendientes.Sum(p => Math.Max(0m, p.abono_capital - A(p.periodo_id).Cap - p.capital_condonado)),
 
                 "solo_interes" =>
                     pendientes.Sum(p =>
-                        Math.Max(0m, p.interes_normal - A(p.periodo_id).Int) +
-                        Math.Max(0m, p.interes_iva   - A(p.periodo_id).Iva)),
+                        Math.Max(0m, p.interes_normal - A(p.periodo_id).Int - p.interes_condonado) +
+                        Math.Max(0m, p.interes_iva   - A(p.periodo_id).Iva - p.iva_condonado)),
 
                 "parcialidad" =>
                     pendientes.Sum(p =>
-                        Math.Max(0m, p.abono_capital  - A(p.periodo_id).Cap) +
-                        Math.Max(0m, p.interes_normal - A(p.periodo_id).Int) +
-                        Math.Max(0m, p.interes_iva    - A(p.periodo_id).Iva)),
+                        Math.Max(0m, p.abono_capital  - A(p.periodo_id).Cap - p.capital_condonado) +
+                        Math.Max(0m, p.interes_normal - A(p.periodo_id).Int - p.interes_condonado) +
+                        Math.Max(0m, p.interes_iva    - A(p.periodo_id).Iva - p.iva_condonado)),
 
                 _ => // parcialidad_mora, pago_total
                     pendientes.Sum(p =>
@@ -216,9 +220,9 @@ namespace ApiEjemplo.Services
                         var a = A(p.periodo_id);
                         int d = Math.Max(0, (int)(fechaPago.Date - p.fecha_vencimiento.Date).TotalDays);
                         decimal mora = d > 0 ? Math.Round(prestamo.mora_diaria * d, 2) : 0m;
-                        return Math.Max(0m, p.abono_capital  - a.Cap) +
-                               Math.Max(0m, p.interes_normal - a.Int) +
-                               Math.Max(0m, p.interes_iva    - a.Iva) +
+                        return Math.Max(0m, p.abono_capital  - a.Cap - p.capital_condonado) +
+                               Math.Max(0m, p.interes_normal - a.Int - p.interes_condonado) +
+                               Math.Max(0m, p.interes_iva    - a.Iva - p.iva_condonado) +
                                // MONEYPINE-FIX: restar mora_condonada — mismo criterio que Reconstruir().
                                Math.Max(0m, mora - p.ahorro_por_pago - p.mora_condonada);
                     }),
@@ -288,7 +292,8 @@ namespace ApiEjemplo.Services
             {
                 if (restante <= 0) break;
                 var a = acum.GetValueOrDefault(p.periodo_id, new AcumPd(0, 0, 0));
-                decimal capPend = Math.Max(0m, p.abono_capital - a.Cap);
+                // MONEYPINE-FIX: restar capital_condonado (durable) — mismo criterio que Reconstruir().
+                decimal capPend = Math.Max(0m, p.abono_capital - a.Cap - p.capital_condonado);
                 if (capPend <= 0) continue;
                 decimal capAplicar = Math.Min(restante, capPend);
                 res.capital_total += capAplicar;
@@ -318,8 +323,9 @@ namespace ApiEjemplo.Services
             {
                 if (restante <= 0) break;
                 var a = acum.GetValueOrDefault(p.periodo_id, new AcumPd(0, 0, 0));
-                decimal intPend = Math.Max(0m, p.interes_normal - a.Int);
-                decimal ivaPend = Math.Max(0m, p.interes_iva    - a.Iva);
+                // MONEYPINE-FIX: restar interes_condonado/iva_condonado (durable).
+                decimal intPend = Math.Max(0m, p.interes_normal - a.Int - p.interes_condonado);
+                decimal ivaPend = Math.Max(0m, p.interes_iva    - a.Iva - p.iva_condonado);
                 if (intPend + ivaPend <= 0) continue;
                 decimal intA = Math.Min(restante, intPend); restante -= intA;
                 decimal ivaA = Math.Min(restante, ivaPend); restante -= ivaA;
@@ -354,10 +360,10 @@ namespace ApiEjemplo.Services
 
                 var a = acum.GetValueOrDefault(p.periodo_id, new AcumPd(0, 0, 0));
 
-                // Pendiente real (restando lo ya pagado en pago_detalle)
-                decimal capPend  = Math.Max(0m, p.abono_capital  - a.Cap);
-                decimal intPend  = Math.Max(0m, p.interes_normal - a.Int);
-                decimal ivaPend  = Math.Max(0m, p.interes_iva    - a.Iva);
+                // Pendiente real (restando lo ya pagado en pago_detalle y lo condonado — durable).
+                decimal capPend  = Math.Max(0m, p.abono_capital  - a.Cap - p.capital_condonado);
+                decimal intPend  = Math.Max(0m, p.interes_normal - a.Int - p.interes_condonado);
+                decimal ivaPend  = Math.Max(0m, p.interes_iva    - a.Iva - p.iva_condonado);
 
                 int d = Math.Max(0, (int)(fechaPago.Date - p.fecha_vencimiento.Date).TotalDays);
                 // MONEYPINE-FIX: restar mora_condonada (durable) — mismo criterio que Reconstruir(),
@@ -381,9 +387,9 @@ namespace ApiEjemplo.Services
                     decimal moraCub = tipoPago == "parcialidad" ? 0m : moraPend;
 
                     // Determinar si cierra: cap+int+iva acumulados cubren el total del periodo
-                    decimal capTotal = a.Cap + capPend;
-                    decimal intTotal = a.Int + intPend;
-                    decimal ivaTotal = a.Iva + ivaPend;
+                    decimal capTotal = a.Cap + capPend + p.capital_condonado;
+                    decimal intTotal = a.Int + intPend + p.interes_condonado;
+                    decimal ivaTotal = a.Iva + ivaPend + p.iva_condonado;
                     bool cerrado = capTotal >= p.abono_capital  - 0.01m
                                 && intTotal >= p.interes_normal - 0.01m
                                 && ivaTotal >= p.interes_iva    - 0.01m;
@@ -423,9 +429,9 @@ namespace ApiEjemplo.Services
                     decimal ivaA = Math.Min(sob, ivaPend);
 
                     // ¿El parcial completa la cobertura al combinar con acum previo?
-                    decimal capTotal = a.Cap + capA;
-                    decimal intTotal = a.Int + intA;
-                    decimal ivaTotal = a.Iva + ivaA;
+                    decimal capTotal = a.Cap + capA + p.capital_condonado;
+                    decimal intTotal = a.Int + intA + p.interes_condonado;
+                    decimal ivaTotal = a.Iva + ivaA + p.iva_condonado;
                     bool cerrado = capTotal >= p.abono_capital  - 0.01m
                                 && intTotal >= p.interes_normal - 0.01m
                                 && ivaTotal >= p.interes_iva    - 0.01m;
@@ -462,9 +468,9 @@ namespace ApiEjemplo.Services
                     decimal mA  = Math.Min(sob, moraPend); // mora residual si queda saldo
                     pagoRestante -= (cA + iA + vA + mA);
 
-                    decimal capTotal = a.Cap + cA;
-                    decimal intTotal = a.Int + iA;
-                    decimal ivaTotal = a.Iva + vA;
+                    decimal capTotal = a.Cap + cA + p.capital_condonado;
+                    decimal intTotal = a.Int + iA + p.interes_condonado;
+                    decimal ivaTotal = a.Iva + vA + p.iva_condonado;
                     bool cerrado = capTotal >= p.abono_capital  - 0.01m
                                 && intTotal >= p.interes_normal - 0.01m
                                 && ivaTotal >= p.interes_iva    - 0.01m;
@@ -514,9 +520,9 @@ namespace ApiEjemplo.Services
                     decimal vA2  = Math.Min(sob, ivaPend); sob -= vA2;
                     decimal mA2  = Math.Min(sob, moraPend);
 
-                    decimal capTotal2 = a.Cap + cA2;
-                    decimal intTotal2 = a.Int + iA2;
-                    decimal ivaTotal2 = a.Iva + vA2;
+                    decimal capTotal2 = a.Cap + cA2 + p.capital_condonado;
+                    decimal intTotal2 = a.Int + iA2 + p.interes_condonado;
+                    decimal ivaTotal2 = a.Iva + vA2 + p.iva_condonado;
                     bool cerrado2 = capTotal2 >= p.abono_capital  - 0.01m
                                  && intTotal2 >= p.interes_normal - 0.01m
                                  && ivaTotal2 >= p.interes_iva    - 0.01m;
