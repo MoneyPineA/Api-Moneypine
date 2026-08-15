@@ -26,6 +26,22 @@ public class PrestamistaDetailDto : PrestamistaMetricsDto
     public string moneda { get; set; } = null!;
     public string zona_horaria { get; set; } = null!;
     public List<TrabajadoresPorRolDto> trabajadores_por_rol { get; set; } = new();
+
+    // MONEYPINE-MT: Fase 3 — datos de contacto del cliente de negocio.
+    public string? correo_contacto { get; set; }
+    public string? telefono_contacto { get; set; }
+    public string? persona_contacto { get; set; }
+    public string? direccion { get; set; }
+    public string? ciudad { get; set; }
+    // Entidad federativa del domicilio — NO confundir con `estatus` (arriba),
+    // que es ACTIVO/SUSPENDIDO/CANCELADO del tenant.
+    public string? estado { get; set; }
+    public string? notas { get; set; }
+
+    // Métricas extra para administrar de verdad al cliente.
+    public int total_pagos { get; set; }
+    public decimal cartera_vencida { get; set; }
+    public DateTime? ultimo_acceso { get; set; }
 }
 
 public class TrabajadoresPorRolDto

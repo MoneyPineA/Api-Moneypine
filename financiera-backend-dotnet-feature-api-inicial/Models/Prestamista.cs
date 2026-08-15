@@ -49,5 +49,32 @@ namespace ApiEjemplo.Models
         public DateTime fecha_alta { get; set; }
 
         public DateTime? fecha_baja { get; set; }
+
+        // MONEYPINE-MT: Fase 3 — datos con los que de verdad se administra un
+        // cliente de negocio (dueño del prestamista), no del tenant técnico.
+        [MaxLength(255)]
+        public string? correo_contacto { get; set; }
+
+        [MaxLength(30)]
+        public string? telefono_contacto { get; set; }
+
+        [MaxLength(150)]
+        public string? persona_contacto { get; set; }
+
+        [MaxLength(300)]
+        public string? direccion { get; set; }
+
+        [MaxLength(100)]
+        public string? ciudad { get; set; }
+
+        // MONEYPINE-MT: entidad federativa del domicilio del prestamista. Ojo:
+        // NO confundir con `estatus` (arriba) — ese es ACTIVO/SUSPENDIDO/CANCELADO
+        // del tenant. `estado` aquí es "Jalisco", "CDMX", etc.
+        [MaxLength(100)]
+        public string? estado { get; set; }
+
+        // Notas libres del dueño de la plataforma sobre este cliente de negocio.
+        // Sin MaxLength -> Pomelo lo mapea a LONGTEXT, igual que config_json.
+        public string? notas { get; set; }
     }
 }
