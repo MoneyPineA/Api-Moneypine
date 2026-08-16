@@ -1,10 +1,14 @@
 using ApiEjemplo.Enums;
+using ApiEjemplo.Tenancy;
 
 namespace ApiEjemplo.Models
 {
-    public class Notification
+    public class Notification : ITenantEntity
     {
         public int Id { get; set; }
+
+        // MONEYPINE-MT: Fase 1 — Parte 4.3
+        public int prestamista_id { get; set; }
 
         public int UsuarioId { get; set; }
 

@@ -1,14 +1,18 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Text.Json.Serialization;
+using ApiEjemplo.Tenancy;
 
 namespace ApiEjemplo.Models
 {
     [Table("notificacion_agendada")]
-    public class NotificacionAgendada
+    public class NotificacionAgendada : ITenantEntity
     {
         [Key]
         public int notificacion_id { get; set; }
+
+        // MONEYPINE-MT: Fase 1 — Parte 4.3
+        public int prestamista_id { get; set; }
 
         [Required]
         public int prestamo_id { get; set; }

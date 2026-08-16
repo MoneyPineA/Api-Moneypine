@@ -4,6 +4,7 @@ using ApiEjemplo.Enums;
 using ApiEjemplo.Models;
 using ApiEjemplo.Security;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -30,11 +31,28 @@ namespace ApiEjemplo.Controllers
         // ==========================
         // POST: api/auth/login
         // ==========================
+        // MONEYPINE-MT: unico endpoint junto con Refresh que debe quedar publico.
+        // El FallbackPolicy en Program.cs exige autenticacion por defecto; sin este
+        // atributo nadie podria loguearse (no hay JWT antes de tener JWT).
+        [AllowAnonymous]
+        // MONEYPINE-SEC: limite de intentos por IP contra fuerza bruta.
+        [EnableRateLimiting("login")]
         [HttpPost("login")]
         public async Task<IActionResult> Login(LoginRequestDto request)
         {
             // Buscar usuario por correo
+            // MONEYPINE-MT: IgnoreQueryFilters() deliberado — I4 lo prohíbe fuera de
+            // api/platform/*, pero login es el ÚNICO caso legítimo: en este punto no
+            // hay JWT, TenantResolutionMiddleware no corrió, e ITenantContext está en
+            // su default (PrestamistaId=0). Con el filtro activo esta consulta jamás
+            // encuentra al usuario real (prestamista_id=1) — el login queda roto para
+            // TODOS los tenants. El tenant recién se conoce leyendo usuario.prestamista_id
+            // aquí mismo, y de ahí sale el claim del JWT (ver GenerarAccessToken). Riesgo
+            // conocido: correo no es único globalmente (ver deuda del arquitecto), así
+            // que un correo duplicado entre dos tenants es ambiguo — deuda existente,
+            // no introducida por este cambio.
             var usuario = await _context.Usuarios
+                .IgnoreQueryFilters()
                 .FirstOrDefaultAsync(u => u.correo == request.correo);
 
             // MONEYPINE-FIX: se responde con objeto JSON, no con string plano.
@@ -71,6 +89,18 @@ namespace ApiEjemplo.Controllers
 
             if (usuario.estado == EstadoUsuario.BLOQUEADO)
                 return StatusCode(403, new { message = "Tu cuenta está bloqueada. Contacta al administrador" });
+
+            // MONEYPINE-MT: Fase 3 — un tenant SUSPENDIDO o CANCELADO no puede
+            // loguear a ninguno de sus usuarios. PLATFORM_ADMIN no pertenece a
+            // la cartera de ningún tenant (su prestamista_id es solo el que le
+            // tocó al crear la fila), así que se excluye de este chequeo.
+            if (usuario.rol != RolUsuario.PLATFORM_ADMIN)
+            {
+                var prestamista = await _context.Prestamistas
+                    .FirstOrDefaultAsync(p => p.prestamista_id == usuario.prestamista_id);
+                if (prestamista != null && prestamista.estatus != EstatusPrestamista.ACTIVO)
+                    return StatusCode(403, new { message = "Tu organización está suspendida" });
+            }
 
             // Obtener permisos
             var permisos = PermisosPorRol.Obtener(usuario.rol);
@@ -113,6 +143,9 @@ namespace ApiEjemplo.Controllers
         // ==========================
         // POST: api/auth/refresh
         // ==========================
+        // MONEYPINE-MT: publico por la misma razon que Login — el cliente aun no
+        // tiene access token vigente cuando llama a este endpoint.
+        [AllowAnonymous]
         [HttpPost("refresh")]
         public async Task<IActionResult> Refresh(TokenRefreshRequestDto request)
         {
@@ -123,7 +156,14 @@ namespace ApiEjemplo.Controllers
             // - Que exista
             // - Que no esté revocado
             // - Que NO esté expirado
+            // MONEYPINE-MT: IgnoreQueryFilters() deliberado — mismo motivo que en Login.
+            // RefreshToken no es ITenantEntity, pero el Include(Usuario) trae el filtro
+            // de Usuario como predicado del JOIN; sin JWT (AllowAnonymous) el tenant está
+            // en su default y el JOIN nunca encontraría al usuario real, dejando /refresh
+            // roto para todos los tenants (EF además advierte de esto al construir el
+            // modelo: "required end of a relationship... filtered out").
             var storedToken = await _context.RefreshTokens
+                .IgnoreQueryFilters()
                 .Include(rt => rt.Usuario)
                 .FirstOrDefaultAsync(rt =>
                     rt.Token == hashedToken &&
@@ -189,7 +229,11 @@ namespace ApiEjemplo.Controllers
             {
                 new Claim(ClaimTypes.NameIdentifier, usuario.usuario_id.ToString()),
                 new Claim(ClaimTypes.Email, usuario.correo),
-                new Claim(ClaimTypes.Role, usuario.rol.ToString())
+                new Claim(ClaimTypes.Role, usuario.rol.ToString()),
+                // MONEYPINE-MT: TenantResolutionMiddleware lee este claim para resolver
+                // ITenantContext en cada request. Sin él, cualquier usuario autenticado
+                // no-plataforma recibe 403 "Token sin tenant asignado".
+                new Claim("prestamista_id", usuario.prestamista_id.ToString())
             };
 
             claims.AddRange(permisos.Select(p => new Claim("permission", p)));

@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Text.Json.Serialization;
 using ApiEjemplo.Helpers;
+using ApiEjemplo.Tenancy;
 
 namespace ApiEjemplo.Models
 {
@@ -9,10 +10,13 @@ namespace ApiEjemplo.Models
     // El archivo se guarda como BLOB en MySQL: el filesystem de Railway es
     // efímero (cada deploy lo borra), la BD es el único almacenamiento durable.
     [Table("formato_documento")]
-    public class FormatoDocumento
+    public class FormatoDocumento : ITenantEntity
     {
         [Key]
         public int formato_id { get; set; }
+
+        // MONEYPINE-MT: Fase 1 — Parte 4.3
+        public int prestamista_id { get; set; }
 
         [Required, MaxLength(150)]
         public string nombre { get; set; } = string.Empty;

@@ -1,14 +1,20 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using ApiEjemplo.Tenancy;
 
 namespace ApiEjemplo.Models
 {
     [Table("concepto_sistema")]
-    public class ConceptoSistema
+    public class ConceptoSistema : ITenantEntity
     {
         [Key]
         [Column("id")]
         public int id { get; set; }
+
+        // MONEYPINE-MT: Fase 1 — Parte 4.3. Tabla creada por SQL crudo en
+        // Program.cs; esta migración la adopta con CREATE TABLE IF NOT EXISTS.
+        [Column("prestamista_id")]
+        public int prestamista_id { get; set; }
 
         [Column("nombre")]
         [MaxLength(100)]

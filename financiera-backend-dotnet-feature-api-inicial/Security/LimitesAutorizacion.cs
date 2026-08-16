@@ -38,17 +38,21 @@ namespace ApiEjemplo.Security
                 // restringido a que solo un ADMIN la ejecute directamente.
                 TipoSolicitud.CONDONAR_MORA => false,
 
+                // CONTADOR es clon de DIRECCION_GENERAL (decision de negocio 2026-08-14),
+                // asi que puede SOLICITAR lo mismo. Recordar: solicitar no es ejecutar —
+                // todo esto sigue pasando por la aprobacion de un ADMIN.
                 TipoSolicitud.ELIMINAR_PAGO
                 or TipoSolicitud.QUITAR_LISTA_NEGRA
                 or TipoSolicitud.QUITAR_BURO
                     => rol is RolUsuario.GERENTE or RolUsuario.RECURSOS_HUMANOS
-                           or RolUsuario.COBRADOR or RolUsuario.DIRECCION_GENERAL,
+                           or RolUsuario.COBRADOR or RolUsuario.DIRECCION_GENERAL
+                           or RolUsuario.CONTADOR,
 
                 TipoSolicitud.ELIMINAR_CREDITO
                 or TipoSolicitud.ELIMINAR_CLIENTE
                 or TipoSolicitud.DAR_BAJA_TRABAJADOR
                     => rol is RolUsuario.GERENTE or RolUsuario.RECURSOS_HUMANOS
-                           or RolUsuario.DIRECCION_GENERAL,
+                           or RolUsuario.DIRECCION_GENERAL or RolUsuario.CONTADOR,
 
                 _ => false,
             };

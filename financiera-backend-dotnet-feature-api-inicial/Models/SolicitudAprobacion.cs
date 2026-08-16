@@ -1,5 +1,6 @@
 using ApiEjemplo.Enums;
 using System.ComponentModel.DataAnnotations.Schema;
+using ApiEjemplo.Tenancy;
 
 namespace ApiEjemplo.Models
 {
@@ -16,9 +17,12 @@ namespace ApiEjemplo.Models
     /// se aplica cuando el ADMIN aprueba, revalidando antes que el estado siga
     /// siendo el mismo que el solicitante describio.
     /// </summary>
-    public class SolicitudAprobacion
+    public class SolicitudAprobacion : ITenantEntity
     {
         public int id { get; set; }
+
+        // MONEYPINE-MT: Fase 1 — Parte 4.3
+        public int prestamista_id { get; set; }
 
         public TipoSolicitud tipo { get; set; }
 

@@ -1,15 +1,24 @@
 using ApiEjemplo.Data;
 using ApiEjemplo.Middleware;
 using ApiEjemplo.Services;
+using ApiEjemplo.Tenancy;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using System.Text.Json.Serialization;
+using System.Threading.RateLimiting;
 using Microsoft.OpenApi.Models;
 
 
 var builder = WebApplication.CreateBuilder(args);
+
+// MONEYPINE-SEC: Kestrel anade "Server: Kestrel" despues de cualquier middleware,
+// asi que quitarlo desde el pipeline no funciona: hay que apagarlo en su origen.
+// Es una pista gratuita sobre la tecnologia del servidor para quien busque
+// vulnerabilidades conocidas de esa version.
+builder.WebHost.ConfigureKestrel(o => o.AddServerHeader = false);
 
 // =======================
 // CORS (AGREGADO)
@@ -71,6 +80,15 @@ if (!string.IsNullOrEmpty(connectionString) &&
     !connectionString.Contains("charset=", StringComparison.OrdinalIgnoreCase))
     connectionString += ";charset=utf8mb4";
 
+// MONEYPINE-MT: limite de pool por instancia. Sin esto, cada replica abre
+// conexiones sin tope (default de MySqlConnector = 100) y con varias replicas
+// se puede agotar max_connections de Railway. 20 es un SUPUESTO (no verificado
+// contra el max_connections real del plan de Railway) — ajustar si se confirma
+// el limite real dividido entre el numero de replicas.
+if (!string.IsNullOrEmpty(connectionString) &&
+    !connectionString.Contains("Maximum Pool Size", StringComparison.OrdinalIgnoreCase))
+    connectionString += ";Maximum Pool Size=20;Minimum Pool Size=0";
+
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseMySql(
         connectionString,
@@ -78,10 +96,35 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     )
 );
 
+// MONEYPINE-MT: Scoped, uno por request (Fase 1 — Parte 4.5, invariante I6).
+// NUNCA AddDbContextPool arriba: el pool reutiliza instancias de AppDbContext
+// entre requests y no reinyecta servicios scoped, así que ITenantContext
+// quedaría pegado al tenant que abrió esa instancia la primera vez.
+builder.Services.AddScoped<ITenantContext, TenantContext>();
+
 // =======================
 // JWT AUTHENTICATION
 // =======================
 var jwtKey = builder.Configuration["Jwt:Key"];
+
+// MONEYPINE-SEC: la clave que firma los tokens. Con multi-tenant el tenant viaja
+// DENTRO del token, asi que quien conozca la clave se firma uno con el prestamista_id
+// que quiera y entra como cualquier financiera. Se rechaza arrancar con la clave de
+// ejemplo o con una demasiado corta: en produccion la clave real llega por variable
+// de entorno (Jwt__Key en Railway), nunca desde el appsettings.json versionado.
+// Solo se exige fuera de Development para no estorbar el arranque local.
+if (!builder.Environment.IsDevelopment())
+{
+    if (string.IsNullOrWhiteSpace(jwtKey)
+        || jwtKey.Contains("CAMBIALA")
+        || jwtKey.Contains("SUPER_SECRETA")
+        || jwtKey.Length < 32)
+    {
+        throw new InvalidOperationException(
+            "Jwt:Key no configurada o insegura. Define una clave robusta (>= 32 caracteres) " +
+            "en la variable de entorno Jwt__Key antes de arrancar en produccion.");
+    }
+}
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 .AddJwtBearer(options =>
@@ -102,7 +145,14 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 // Servicio de Notificaciones
 builder.Services.AddScoped<NotificationService>();
 
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    // MONEYPINE-MT: cerrado por defecto. Un endpoint sin [Authorize] no tiene JWT,
+    // por tanto no tiene tenant, y devolvería datos de todos los prestamistas.
+    options.FallbackPolicy = new AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .Build();
+});
 
 // MONEYPINE-FIX: los 403 salian con el cuerpo vacio y el usuario solo veia
 // "Error 403". Este handler los responde con una explicacion en espanol y,
@@ -130,6 +180,33 @@ builder.Services.AddScoped<ListaNegraService>();
 
 // Peticiones de roles no-ADMIN para ejecutar acciones sensibles
 builder.Services.AddScoped<SolicitudAprobacionService>();
+
+// MONEYPINE-SEC: limite de intentos. Sin esto, /api/auth/login acepta peticiones
+// sin tope: se comprobo lanzando 6 intentos seguidos contra produccion y las 6
+// respondieron 401, ninguna 429. Con un diccionario y tiempo, eso es una cuenta
+// comprometida. La particion es por IP para no dejar que un atacante bloquee a
+// un usuario legitimo simplemente fallando con su correo.
+builder.Services.AddRateLimiter(options =>
+{
+    options.AddPolicy("login", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "desconocida",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 10,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+            }));
+
+    options.OnRejected = async (context, ct) =>
+    {
+        context.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+        await context.HttpContext.Response.WriteAsJsonAsync(new
+        {
+            message = "Demasiados intentos. Espera un minuto e inténtalo de nuevo."
+        }, ct);
+    };
+});
 
 // MONEYPINE-FIX: cron job diario — reporta automáticamente a buró los créditos con mora >= 90 días
 builder.Services.AddHostedService<BuroAutoReporteService>();
@@ -184,6 +261,41 @@ var app = builder.Build();
 
 // Pipeline
 
+// MONEYPINE-SEC: cabeceras de seguridad en TODA respuesta. Van lo antes posible
+// en el pipeline para cubrir tambien las respuestas de error.
+app.Use(async (context, next) =>
+{
+    var h = context.Response.Headers;
+
+    // Impide que el navegador "adivine" el tipo de contenido: sin esto, un
+    // archivo subido por un cliente podria interpretarse como script.
+    h["X-Content-Type-Options"] = "nosniff";
+
+    // La API no se muestra en iframes; corta el clickjacking.
+    h["X-Frame-Options"] = "DENY";
+
+    // No filtrar la URL completa (que lleva ids) hacia sitios externos.
+    h["Referrer-Policy"] = "no-referrer";
+
+    // Esto es una API JSON: no necesita ejecutar nada ni cargar recursos.
+    // EXCEPCION: la interfaz de Swagger es una pagina HTML real con su propio CSS y
+    // JS, asi que "default-src 'none'" la dejaba completamente en blanco. Solo existe
+    // en Development (en produccion Swagger no se monta), asi que la excepcion no
+    // relaja nada de cara al publico.
+    var esSwagger = context.Request.Path.StartsWithSegments("/swagger");
+    h["Content-Security-Policy"] = (esSwagger && app.Environment.IsDevelopment())
+        ? "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data:"
+        : "default-src 'none'; frame-ancestors 'none'";
+
+    h["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()";
+
+    // Oculta la tecnologia del servidor: menos pistas para automatizar ataques.
+    h.Remove("Server");
+    h.Remove("X-Powered-By");
+
+    await next();
+});
+
 // MONEYPINE-FIX: exception handler ANTES de CORS para que los 500 incluyan el header CORS
 app.UseExceptionHandler(errorApp =>
 {
@@ -192,21 +304,38 @@ app.UseExceptionHandler(errorApp =>
         context.Response.StatusCode = 500;
         context.Response.ContentType = "application/json";
         var ex = context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>();
-        await context.Response.WriteAsJsonAsync(new
+
+        // MONEYPINE-SEC: en produccion NO se devuelve el detalle de la excepcion.
+        // Antes se enviaban Message e InnerException, que revelan nombres de
+        // tablas y columnas, rutas del servidor y fragmentos de la cadena de
+        // conexion — un mapa gratis del sistema para quien provoque un error.
+        // Se registra en el log del servidor, que es donde debe estar.
+        if (app.Environment.IsDevelopment())
         {
-            error = "Error interno del servidor",
-            message = ex?.Error?.Message,
-            inner = ex?.Error?.InnerException?.Message
-        });
+            await context.Response.WriteAsJsonAsync(new
+            {
+                error = "Error interno del servidor",
+                message = ex?.Error?.Message,
+                inner = ex?.Error?.InnerException?.Message
+            });
+        }
+        else
+        {
+            app.Logger.LogError(ex?.Error, "Error no controlado en {Ruta}", context.Request.Path);
+            await context.Response.WriteAsJsonAsync(new
+            {
+                error = "Error interno del servidor",
+                message = "Ocurrió un error inesperado. Intenta de nuevo o contacta al administrador."
+            });
+        }
     });
 });
 
+// MONEYPINE-SEC: Swagger SOLO en desarrollo. Las dos ramas del if hacian lo
+// mismo, asi que en produccion quedaban publicados 98 endpoints con su forma
+// exacta — incluidas las rutas administrativas — sin pedir autenticacion.
+// Es el mapa completo de la API servido a cualquiera.
 if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
-else
 {
     app.UseSwagger();
     app.UseSwaggerUI();
@@ -223,43 +352,58 @@ app.UseCors("AllowFrontend");
 
 // ORDEN IMPORTANTE
 app.UseAuthentication();
+
+// MONEYPINE-MT: DESPUÉS de UseAuthentication (necesita context.User poblado) y
+// ANTES de UseAuthorization (el resto del pipeline, incluido el AppDbContext de
+// cada controller, necesita el tenant ya resuelto). Fase 1 — Parte 4.5.
+app.UseMiddleware<TenantResolutionMiddleware>();
+
+// MONEYPINE-MT: comprueba que el subdominio (puebla.moneypine.com.mx) no contradiga
+// al tenant del token. Va DESPUÉS de TenantResolution porque contrasta contra el
+// tenant ya resuelto; el host jamás lo decide. Ver Tenancy/HostTenantGuardMiddleware.cs.
+app.UseMiddleware<ApiEjemplo.Tenancy.HostTenantGuardMiddleware>();
+
+// MONEYPINE-MT: Fase 3 — confina PLATFORM_ADMIN a /api/platform/* y /api/auth/*.
+// Justo después del middleware de tenant (necesita EsPlataforma ya resuelto vía
+// el rol del token) y antes de UseAuthorization. Ver Tenancy/PlatformScopeMiddleware.cs.
+app.UseMiddleware<ApiEjemplo.Tenancy.PlatformScopeMiddleware>();
+
 app.UseAuthorization();
 
 // MONEYPINE-FIX: registra la actividad del usuario autenticado (Reportes/Trabajadores conectados)
 app.UseMiddleware<PresenceTrackingMiddleware>();
 
 // Habilitar Controllers
+// MONEYPINE-SEC: activa las politicas de limite declaradas arriba.
+app.UseRateLimiter();
+
 app.MapControllers();
 
 // =======================
 // MIGRACIONES AUTOMÁTICAS
 // =======================
-using (var scope = app.Services.CreateScope())
+// MONEYPINE-MT: migrar en el arranque es una condicion de carrera con varias
+// replicas (dos instancias pueden migrar a la vez). El objetivo es un
+// pre-deploy command en Railway; hasta que este configurado, el default
+// conserva el comportamiento actual para no romper el despliegue.
+// La comparacion normaliza el valor: "False" o " false" son intentos evidentes de
+// desactivarlo, y con una comparacion exacta habrian seguido migrando en silencio.
+var migrarAlArrancar = Environment.GetEnvironmentVariable("RUN_MIGRATIONS_ON_STARTUP")
+    ?.Trim().ToLowerInvariant() != "false";
+if (migrarAlArrancar)
 {
+    using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     db.Database.Migrate();
 }
 
 // =======================
-// MONEYPINE-FIX: recalcular saldo_actual de todos los préstamos desde sus periodos pendientes
-// Corrige saldos desincronizados causados por pagos previos con lógica errónea
+// MONEYPINE-MT (B3): el recalculo de saldo_actual de TODOS los prestamos ya no
+// corre en el arranque (era un N+1 sobre la tabla completa que ademas escribia
+// en la cartera de todos los clientes en cada deploy, sin que nadie lo pidiera).
+// Se movio a POST /api/admin/recalcular-saldos (AdminDashboardController),
+// protegido con [Authorize(Roles="ADMIN")]. Logica identica, solo cambio donde vive.
 // =======================
-using (var scope = app.Services.CreateScope())
-{
-    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    var prestamos = await db.Prestamos.ToListAsync();
-    foreach (var p in prestamos)
-    {
-        // abono_capital = capital que aporta ese periodo; sumar = capital total pendiente de pagar
-        var saldoPendiente = await db.PeriodosAmortizacion
-            .Where(pa => pa.prestamo_id == p.prestamo_id && pa.estado_pago == 1)
-            .SumAsync(pa => (decimal?)pa.abono_capital) ?? 0;
-
-        if (saldoPendiente > 0)
-            p.saldo_actual = saldoPendiente;
-    }
-    await db.SaveChangesAsync();
-}
 
 // =======================
 // MONEYPINE-FIX: crear tablas del módulo de ahorro si no existen
@@ -268,6 +412,15 @@ using (var scope = app.Services.CreateScope())
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+    // MONEYPINE-MT: este scope no pasa por TenantResolutionMiddleware (no hay
+    // request/JWT en el arranque), así que ITenantContext queda en PrestamistaId=0
+    // por defecto. El query filter global (ver AppDbContext.OnModelCreating) ya
+    // aplica a db.ProductosAhorro, y con TenantId=0 el CountAsync de abajo NO
+    // vería las filas reales (sembradas con prestamista_id=1) — el seed se
+    // reinsertaría en cada arranque. El seed siempre fue explícitamente para el
+    // tenant 1 (ver el INSERT más abajo), así que fijamos el contexto a ese tenant.
+    scope.ServiceProvider.GetRequiredService<ITenantContext>().Establecer(1);
 
     await db.Database.ExecuteSqlRawAsync(@"
         CREATE TABLE IF NOT EXISTS producto_ahorro (
@@ -316,12 +469,16 @@ using (var scope = app.Services.CreateScope())
     var count = await db.ProductosAhorro.CountAsync();
     if (count == 0)
     {
+        // MONEYPINE-MT: prestamista_id explícito — la migración MT01 le quitó
+        // el DEFAULT a la columna (a propósito, ver Fase 1), así que un INSERT
+        // sin esta columna truena en un entorno limpio donde esta tabla se
+        // siembra por primera vez.
         await db.Database.ExecuteSqlRawAsync(@"
-            INSERT INTO producto_ahorro (nombre, tasa_anual, plazo_dias, descripcion) VALUES
-              ('AHORRO ORDINARIO',    0.00,  365, 'Ahorro sin rendimiento, plazo anual'),
-              ('AHORRO CRECEMAX',    10.00,  180, 'Rendimiento del 10% anual, plazo 180 dias'),
-              ('Inversion 60',       60.00,   60, 'Rendimiento del 60% anual, plazo 60 dias'),
-              ('Ahorro CreceMax 120',120.00, 120, 'Rendimiento del 120% anual, plazo 120 dias');
+            INSERT INTO producto_ahorro (nombre, tasa_anual, plazo_dias, descripcion, prestamista_id) VALUES
+              ('AHORRO ORDINARIO',    0.00,  365, 'Ahorro sin rendimiento, plazo anual', 1),
+              ('AHORRO CRECEMAX',    10.00,  180, 'Rendimiento del 10% anual, plazo 180 dias', 1),
+              ('Inversion 60',       60.00,   60, 'Rendimiento del 60% anual, plazo 60 dias', 1),
+              ('Ahorro CreceMax 120',120.00, 120, 'Rendimiento del 120% anual, plazo 120 dias', 1);
         ");
     }
 }
@@ -332,6 +489,11 @@ using (var scope = app.Services.CreateScope())
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+    // MONEYPINE-MT: mismo motivo que el bloque de producto_ahorro arriba —
+    // sin este Establecer(1), el CountAsync filtrado por TenantId=0 nunca
+    // vería el seed real (prestamista_id=1) y lo reinsertaría en cada arranque.
+    scope.ServiceProvider.GetRequiredService<ITenantContext>().Establecer(1);
 
     await db.Database.ExecuteSqlRawAsync(@"
         CREATE TABLE IF NOT EXISTS concepto_sistema (
@@ -347,16 +509,18 @@ using (var scope = app.Services.CreateScope())
     var count = await db.ConceptosSistema.CountAsync();
     if (count == 0)
     {
+        // MONEYPINE-MT: prestamista_id explícito — ver nota equivalente arriba
+        // en el seed de producto_ahorro.
         await db.Database.ExecuteSqlRawAsync(@"
-            INSERT INTO concepto_sistema (nombre, tipo, orden) VALUES
-              ('Alimento',          'GASTO', 1),
-              ('Luz',               'GASTO', 2),
-              ('Teléfono',          'GASTO', 3),
-              ('Transporte',        'GASTO', 4),
-              ('Renta',             'GASTO', 5),
-              ('Inversión negocio', 'GASTO', 6),
-              ('Créditos',          'GASTO', 7),
-              ('Otros',             'GASTO', 8);
+            INSERT INTO concepto_sistema (nombre, tipo, orden, prestamista_id) VALUES
+              ('Alimento',          'GASTO', 1, 1),
+              ('Luz',               'GASTO', 2, 1),
+              ('Teléfono',          'GASTO', 3, 1),
+              ('Transporte',        'GASTO', 4, 1),
+              ('Renta',             'GASTO', 5, 1),
+              ('Inversión negocio', 'GASTO', 6, 1),
+              ('Créditos',          'GASTO', 7, 1),
+              ('Otros',             'GASTO', 8, 1);
         ");
     }
 }

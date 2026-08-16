@@ -15,6 +15,19 @@ namespace ApiEjemplo.Controllers
     {
         private readonly AppDbContext _context;
 
+        // MONEYPINE-FIX: los roles del backend deben coincidir con los del menu
+        // (MODULE_ACCESS en Sidebar.jsx). Estaban todos en "ADMIN" mientras el menu
+        // mostraba "Resumen del dia" tambien a DIRECCION_GENERAL y RECURSOS_HUMANOS:
+        // esos usuarios abrian la pantalla y recibian 403 en cada tarjeta, asi que
+        // veian el dashboard vacio sin ninguna explicacion.
+        // GERENTE se agrego el 2026-08-14 a peticion del negocio. RECURSOS_HUMANOS se
+        // mantiene: ya tenia el modulo y quitarselo seria una regresion para quien lo usa.
+        private const string RolesResumen = "ADMIN,DIRECCION_GENERAL,RECURSOS_HUMANOS,GERENTE,CONTADOR";
+
+        // "Trabajadores conectados" se muestra en Reportes, que en el menu tiene otro
+        // conjunto de roles — se respeta ese, no el de Resumen.
+        private const string RolesReportes = "ADMIN,DIRECCION_GENERAL,GERENTE,COBRADOR,CONTADOR";
+
         public AdminDashboardController(AppDbContext context)
         {
             _context = context;
@@ -24,7 +37,7 @@ namespace ApiEjemplo.Controllers
         // GET: api/admin/dashboard/Pagos-Totales
         // Retorna pagos agrupados por mes
         // =====================================================
-        [Authorize(Roles = "ADMIN")]
+        [Authorize(Roles = RolesResumen)]
         [HttpGet("Pagos-Totales")]
         public async Task<IActionResult> GetPagosTotales(
             PeriodoDashboard period = PeriodoDashboard.day,
@@ -134,7 +147,7 @@ namespace ApiEjemplo.Controllers
         // GET: api/admin/dashboard/indicadores
         // Retorna indicadores de cartera para CreditPortfolio
         // =====================================================
-        [Authorize(Roles = "ADMIN")]
+        [Authorize(Roles = RolesResumen)]
         [HttpGet("indicadores")]
         public async Task<IActionResult> GetIndicadores()
         {
@@ -176,7 +189,14 @@ namespace ApiEjemplo.Controllers
             return Ok(new
             {
                 creditosActivos     = activos.Count + atrasados.Count, // MONEYPINE-FIX: incluye ATRASADO para coincidir con tabla
-                capitalActual       = activos.Sum(p => p.saldo_actual), // MONEYPINE-FIX: solo cartera sana (ACTIVO)
+                // DECISION DEL NEGOCIO (2026-08-14): se mantiene "solo estatus ACTIVO".
+                // Se propuso cambiarlo al capital realmente pendiente (suma de
+                // abono_capital de los periodos sin pagar), que en produccion habria
+                // pasado de ~$20,800 a ~$1.57M, y el usuario decidio dejarlo como esta.
+                // Ojo al leer este numero: NO es "todo el capital que nos deben" sino el
+                // de la cartera al corriente — es identico a carteraCorriente, unas
+                // lineas mas abajo, a proposito.
+                capitalActual       = activos.Sum(p => p.saldo_actual),
                 interesActual       = activos.Sum(p => p.saldo_actual * p.tasa_interes / 100)               // MONEYPINE-FIX: interés sobre saldo pendiente real
                                     + atrasados.Sum(p => p.saldo_actual * p.tasa_interes / 100),
                 totalCartera        = activos.Sum(p => p.saldo_actual) + atrasados.Sum(p => p.saldo_actual), // MONEYPINE-FIX: usa saldo_actual, no capital original
@@ -198,7 +218,7 @@ namespace ApiEjemplo.Controllers
         // varias personas comparten un mismo usuario, solo se ve una tarjeta con la actividad
         // mas reciente entre ellas.
         // =====================================================
-        [Authorize(Roles = "ADMIN")]
+        [Authorize(Roles = RolesReportes)]
         [HttpGet("trabajadores-conectados")]
         public async Task<IActionResult> GetTrabajadoresConectados()
         {
@@ -278,7 +298,7 @@ namespace ApiEjemplo.Controllers
             return esMovil ? $"App móvil / {so}" : $"{navegador} / {so}";
         }
 
-        [Authorize(Roles = "ADMIN")]
+        [Authorize(Roles = RolesResumen)]
         [HttpGet("financial-summary")]
         public async Task<IActionResult> GetFinancialSummary()
         {
@@ -309,7 +329,36 @@ namespace ApiEjemplo.Controllers
             return Ok(summary);
         }
 
+        // =====================================================
+        // POST: api/admin/recalcular-saldos
+        // MONEYPINE-MT (B3): recalculo de saldo_actual movido fuera del arranque.
+        // Antes corria en Program.cs en cada boot sobre TODA la tabla prestamos
+        // (N+1 sobre la tabla completa) y escribia en la cartera de todos los
+        // clientes sin que nadie lo pidiera; con varias replicas ademas corria
+        // varias veces en paralelo. La logica es identica a la original, solo
+        // cambio donde vive y que ahora la dispara un ADMIN a proposito.
+        // =====================================================
         [Authorize(Roles = "ADMIN")]
+        [HttpPost("/api/admin/recalcular-saldos")]
+        public async Task<IActionResult> RecalcularSaldos()
+        {
+            var prestamos = await _context.Prestamos.ToListAsync();
+            foreach (var p in prestamos)
+            {
+                // abono_capital = capital que aporta ese periodo; sumar = capital total pendiente de pagar
+                var saldoPendiente = await _context.PeriodosAmortizacion
+                    .Where(pa => pa.prestamo_id == p.prestamo_id && pa.estado_pago == 1)
+                    .SumAsync(pa => (decimal?)pa.abono_capital) ?? 0;
+
+                if (saldoPendiente > 0)
+                    p.saldo_actual = saldoPendiente;
+            }
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "Saldos recalculados", prestamos_procesados = prestamos.Count });
+        }
+
+        [Authorize(Roles = RolesResumen)]
         [HttpGet("recent-activity")]
         public async Task<IActionResult> GetRecentActivity()
         {

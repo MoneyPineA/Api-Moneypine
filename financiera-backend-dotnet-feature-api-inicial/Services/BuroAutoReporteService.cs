@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using ApiEjemplo.Data;
 using ApiEjemplo.Enums;
 using ApiEjemplo.Models;
+using ApiEjemplo.Tenancy;
 
 namespace ApiEjemplo.Services
 {
@@ -43,7 +44,12 @@ namespace ApiEjemplo.Services
 
             try
             {
-                using var scope = _scopeFactory.CreateScope();
+                // MONEYPINE-MT: una vuelta por prestamista activo. Fijado al tenant 1, la
+                // mora de cualquier otro prestamista no llegaba nunca al buro.
+                await TenantJobRunner.PorCadaTenantAsync(
+                    _scopeFactory, _logger, "BuroAutoReporteService",
+                    async (scope, tenantId) =>
+                {
                 var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
                 // Leer configuracion_sistema para verificar si reporte automático está activo
@@ -54,7 +60,18 @@ namespace ApiEjemplo.Services
                 string reporteActivo = "false";
                 using (var cmd = conn.CreateCommand())
                 {
-                    cmd.CommandText = "SELECT valor FROM configuracion_sistema WHERE clave = 'reporte_automatico'";
+                    // MONEYPINE-MT: filtro manual, SQL crudo (configuracion_sistema no tiene
+                    // entidad EF, asi que el query filter global no la cubre — invariante I5).
+                    // Sin el tenant explicito, el flag de un prestamista decidiria el
+                    // auto-reporte a buro de todos los demas.
+                    cmd.CommandText =
+                        "SELECT valor FROM configuracion_sistema " +
+                        "WHERE clave = 'reporte_automatico' AND prestamista_id = @tenant";
+                    var pTenant = cmd.CreateParameter();
+                    pTenant.ParameterName = "@tenant";
+                    pTenant.Value = tenantId;
+                    cmd.Parameters.Add(pTenant);
+
                     using var reader = await cmd.ExecuteReaderAsync();
                     if (await reader.ReadAsync())
                         reporteActivo = reader.GetString(0);
@@ -62,7 +79,9 @@ namespace ApiEjemplo.Services
 
                 if (reporteActivo != "true")
                 {
-                    _logger.LogInformation("BuroAutoReporteService: reporte_automatico = false, omitiendo.");
+                    _logger.LogInformation(
+                        "BuroAutoReporteService: reporte_automatico = false para el prestamista {t}, omitiendo.",
+                        tenantId);
                     return;
                 }
 
@@ -111,7 +130,10 @@ namespace ApiEjemplo.Services
                 }
 
                 await db.SaveChangesAsync();
-                _logger.LogInformation("BuroAutoReporteService: {n} cliente(s) procesados con mora >= 90 días.", reportados);
+                _logger.LogInformation(
+                    "BuroAutoReporteService: {n} cliente(s) del prestamista {t} con mora >= 90 días.",
+                    reportados, tenantId);
+                });
             }
             catch (Exception ex)
             {

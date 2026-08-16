@@ -1,14 +1,19 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using ApiEjemplo.Tenancy;
 
 namespace ApiEjemplo.Models
 {
     [Table("lista_negra")]
-    public class ListaNegra
+    public class ListaNegra : ITenantEntity
     {
         [Key]
         [Column("lista_negra_id")]
         public int lista_negra_id { get; set; }
+
+        // MONEYPINE-MT: Fase 1 — Parte 4.3
+        [Column("prestamista_id")]
+        public int prestamista_id { get; set; }
 
         [Required]
         [Column("cliente_id")]

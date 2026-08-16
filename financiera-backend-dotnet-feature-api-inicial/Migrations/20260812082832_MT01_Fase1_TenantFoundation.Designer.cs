@@ -4,6 +4,7 @@ using ApiEjemplo.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace ApiEjemplo.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260812082832_MT01_Fase1_TenantFoundation")]
+    partial class MT01_Fase1_TenantFoundation
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1060,9 +1063,6 @@ namespace ApiEjemplo.Migrations
                     b.Property<decimal>("ahorro_por_pago")
                         .HasColumnType("decimal(16,4)");
 
-                    b.Property<decimal>("capital_condonado")
-                        .HasColumnType("decimal(16,4)");
-
                     b.Property<decimal>("capital_pendiente")
                         .HasColumnType("decimal(16,4)");
 
@@ -1084,9 +1084,6 @@ namespace ApiEjemplo.Migrations
                     b.Property<decimal>("gasto_cobranza")
                         .HasColumnType("decimal(16,4)");
 
-                    b.Property<decimal>("interes_condonado")
-                        .HasColumnType("decimal(16,4)");
-
                     b.Property<decimal>("interes_iva")
                         .HasColumnType("decimal(16,4)");
 
@@ -1094,9 +1091,6 @@ namespace ApiEjemplo.Migrations
                         .HasColumnType("decimal(16,4)");
 
                     b.Property<decimal>("interes_normal")
-                        .HasColumnType("decimal(16,4)");
-
-                    b.Property<decimal>("iva_condonado")
                         .HasColumnType("decimal(16,4)");
 
                     b.Property<decimal>("mora_condonada")
@@ -1134,28 +1128,12 @@ namespace ApiEjemplo.Migrations
 
                     MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("prestamista_id"));
 
-                    b.Property<string>("ciudad")
-                        .HasMaxLength(100)
-                        .HasColumnType("varchar(100)");
-
                     b.Property<string>("color_primario")
                         .HasMaxLength(7)
                         .HasColumnType("varchar(7)");
 
                     b.Property<string>("config_json")
                         .HasColumnType("longtext");
-
-                    b.Property<string>("correo_contacto")
-                        .HasMaxLength(255)
-                        .HasColumnType("varchar(255)");
-
-                    b.Property<string>("direccion")
-                        .HasMaxLength(300)
-                        .HasColumnType("varchar(300)");
-
-                    b.Property<string>("estado")
-                        .HasMaxLength(100)
-                        .HasColumnType("varchar(100)");
 
                     b.Property<string>("estatus")
                         .IsRequired()
@@ -1183,13 +1161,6 @@ namespace ApiEjemplo.Migrations
                         .HasMaxLength(150)
                         .HasColumnType("varchar(150)");
 
-                    b.Property<string>("notas")
-                        .HasColumnType("longtext");
-
-                    b.Property<string>("persona_contacto")
-                        .HasMaxLength(150)
-                        .HasColumnType("varchar(150)");
-
                     b.Property<string>("plan")
                         .IsRequired()
                         .HasMaxLength(30)
@@ -1207,10 +1178,6 @@ namespace ApiEjemplo.Migrations
                         .IsRequired()
                         .HasMaxLength(40)
                         .HasColumnType("varchar(40)");
-
-                    b.Property<string>("telefono_contacto")
-                        .HasMaxLength(30)
-                        .HasColumnType("varchar(30)");
 
                     b.Property<string>("zona_horaria")
                         .IsRequired()

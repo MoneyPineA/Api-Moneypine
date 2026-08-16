@@ -1,14 +1,19 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Text.Json.Serialization;
+using ApiEjemplo.Tenancy;
 
 namespace ApiEjemplo.Models
 {
     [Table("movimiento_ahorro")]
-    public class MovimientoAhorro
+    public class MovimientoAhorro : ITenantEntity
     {
         [Key]
         public int id { get; set; }
+
+        // MONEYPINE-MT: Fase 1 — Parte 4.3. Tabla creada por SQL crudo en
+        // Program.cs; esta migración la adopta con CREATE TABLE IF NOT EXISTS.
+        public int prestamista_id { get; set; }
 
         [Required]
         public int cuenta_ahorro_id { get; set; }

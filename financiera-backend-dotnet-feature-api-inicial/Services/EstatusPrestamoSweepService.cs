@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using ApiEjemplo.Data;
 using ApiEjemplo.Enums;
+using ApiEjemplo.Tenancy;
 
 namespace ApiEjemplo.Services
 {
@@ -44,36 +45,49 @@ namespace ApiEjemplo.Services
 
             try
             {
-                using var scope = _scopeFactory.CreateScope();
-                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-
-                var candidatos = await db.Prestamos
-                    .Where(p => p.estatus == EstatusPrestamo.ACTIVO)
-                    .Select(p => p.prestamo_id)
-                    .ToListAsync();
-
-                int actualizados = 0;
-                foreach (var prestamoId in candidatos)
-                {
-                    try
+                // MONEYPINE-MT: una vuelta por prestamista activo. Antes estaba fijado al
+                // tenant 1, asi que los creditos de cualquier otro prestamista nunca
+                // pasaban de ACTIVO a ATRASADO — su cartera se veria sana para siempre.
+                await TenantJobRunner.PorCadaTenantAsync(
+                    _scopeFactory, _logger, "EstatusPrestamoSweepService",
+                    async (scope, tenantId) =>
                     {
-                        // Cada préstamo se reconstruye con su propio scope/DbContext
-                        // para que un error puntual no invalide el resto del barrido
-                        // ni deje el ChangeTracker en un estado inconsistente.
-                        using var pScope = _scopeFactory.CreateScope();
-                        var motor = pScope.ServiceProvider.GetRequiredService<MotorRecalculoPrestamoService>();
-                        await motor.Reconstruir(prestamoId);
-                        actualizados++;
-                    }
-                    catch (Exception exPrestamo)
-                    {
-                        _logger.LogError(exPrestamo,
-                            "EstatusPrestamoSweepService: error al reconstruir préstamo {id}", prestamoId);
-                    }
-                }
+                        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-                _logger.LogInformation(
-                    "EstatusPrestamoSweepService: {n} préstamo(s) ACTIVO revisado(s).", actualizados);
+                        var candidatos = await db.Prestamos
+                            .Where(p => p.estatus == EstatusPrestamo.ACTIVO)
+                            .Select(p => p.prestamo_id)
+                            .ToListAsync();
+
+                        int actualizados = 0;
+                        foreach (var prestamoId in candidatos)
+                        {
+                            try
+                            {
+                                // Cada préstamo se reconstruye con su propio scope/DbContext
+                                // para que un error puntual no invalide el resto del barrido
+                                // ni deje el ChangeTracker en un estado inconsistente.
+                                using var pScope = _scopeFactory.CreateScope();
+                                // MONEYPINE-MT: scope nuevo -> AppDbContext/ITenantContext
+                                // nuevos, otra vez sin tenant resuelto. Se propaga el mismo
+                                // tenant de esta vuelta, no una constante.
+                                pScope.ServiceProvider.GetRequiredService<ITenantContext>().Establecer(tenantId);
+                                var motor = pScope.ServiceProvider.GetRequiredService<MotorRecalculoPrestamoService>();
+                                await motor.Reconstruir(prestamoId);
+                                actualizados++;
+                            }
+                            catch (Exception exPrestamo)
+                            {
+                                _logger.LogError(exPrestamo,
+                                    "EstatusPrestamoSweepService: error al reconstruir préstamo {id} (tenant {t})",
+                                    prestamoId, tenantId);
+                            }
+                        }
+
+                        _logger.LogInformation(
+                            "EstatusPrestamoSweepService: {n} préstamo(s) ACTIVO revisado(s) del prestamista {t}.",
+                            actualizados, tenantId);
+                    });
             }
             catch (Exception ex)
             {

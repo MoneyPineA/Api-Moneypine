@@ -4,6 +4,7 @@ using ApiEjemplo.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace ApiEjemplo.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260813063507_MT02_PrestamistaDatosContacto")]
+    partial class MT02_PrestamistaDatosContacto
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1060,9 +1063,6 @@ namespace ApiEjemplo.Migrations
                     b.Property<decimal>("ahorro_por_pago")
                         .HasColumnType("decimal(16,4)");
 
-                    b.Property<decimal>("capital_condonado")
-                        .HasColumnType("decimal(16,4)");
-
                     b.Property<decimal>("capital_pendiente")
                         .HasColumnType("decimal(16,4)");
 
@@ -1084,9 +1084,6 @@ namespace ApiEjemplo.Migrations
                     b.Property<decimal>("gasto_cobranza")
                         .HasColumnType("decimal(16,4)");
 
-                    b.Property<decimal>("interes_condonado")
-                        .HasColumnType("decimal(16,4)");
-
                     b.Property<decimal>("interes_iva")
                         .HasColumnType("decimal(16,4)");
 
@@ -1094,9 +1091,6 @@ namespace ApiEjemplo.Migrations
                         .HasColumnType("decimal(16,4)");
 
                     b.Property<decimal>("interes_normal")
-                        .HasColumnType("decimal(16,4)");
-
-                    b.Property<decimal>("iva_condonado")
                         .HasColumnType("decimal(16,4)");
 
                     b.Property<decimal>("mora_condonada")

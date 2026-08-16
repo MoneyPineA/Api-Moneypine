@@ -1,13 +1,39 @@
+using System.Reflection;
 using Microsoft.EntityFrameworkCore;
 using ApiEjemplo.Models;
 using ApiEjemplo.Enums;
+using ApiEjemplo.Tenancy;
 
 namespace ApiEjemplo.Data
 {
     public class AppDbContext : DbContext
     {
-        public AppDbContext(DbContextOptions<AppDbContext> options)
-            : base(options) { }
+        // MONEYPINE-MT: ITenantContext es scoped (uno por request). AppDbContext
+        // también se registra con AddDbContext normal (I6 — nunca AddDbContextPool),
+        // así que cada instancia de contexto recibe el ITenantContext correcto de
+        // SU request. Guardar la referencia aquí es seguro: no se comparte entre
+        // requests.
+        private readonly ITenantContext _tenant;
+
+        public AppDbContext(DbContextOptions<AppDbContext> options, ITenantContext tenant)
+            : base(options)
+        {
+            _tenant = tenant;
+        }
+
+        // MONEYPINE-MT: propiedades de INSTANCIA — NO constantes. El query filter
+        // de abajo las referencia directamente (nunca Expression.Constant(_tenant)).
+        // EF Core detecta el acceso a una propiedad de instancia del propio DbContext
+        // y lo parametriza en cada consulta; si en cambio capturáramos el valor de
+        // _tenant como constante, EF construye el modelo UNA vez (cacheado por tipo
+        // de DbContext) y todos los requests siguientes verían el tenant del primero
+        // — fuga de datos entre clientes, silenciosa. Invariante I2 del contrato.
+        public int TenantId => _tenant.PrestamistaId;
+        public bool EsPlataforma => _tenant.EsPlataforma;
+
+        // MONEYPINE-MT: tabla de tenants (Fase 1 — Parte 4.2). El query filter
+        // global que usa TenantId/EsPlataforma lo agrega mt-core-tenancy.
+        public DbSet<Prestamista> Prestamistas { get; set; }
 
         // DbSets (tablas)
         public DbSet<Usuario> Usuarios { get; set; }
@@ -373,6 +399,152 @@ namespace ApiEjemplo.Data
                       .OnDelete(DeleteBehavior.SetNull)
                       .IsRequired(false);
             });
+
+            // =======================
+            // MONEYPINE-MT: PRESTAMISTA (tenant) — Fase 1, Parte 4.2
+            // =======================
+            modelBuilder.Entity<Prestamista>(entity =>
+            {
+                entity.Property(p => p.estatus)
+                      .HasConversion<string>()
+                      .HasDefaultValue(EstatusPrestamista.ACTIVO)
+                      .IsRequired();
+
+                entity.HasIndex(p => p.slug).IsUnique();
+            });
+
+            // =======================
+            // MONEYPINE-MT: FK prestamista_id -> prestamista para TODA entidad
+            // que implemente ITenantEntity (Fase 1 — Parte 4.3). Se hace por
+            // reflexión sobre el modelo en vez de repetir HasOne/WithMany 27
+            // veces. Restrict: borrar un tenant no debe cascadear en silencio
+            // sobre miles de filas de negocio de otros módulos.
+            // El query filter global (HasQueryFilter) NO se agrega aquí —
+            // es responsabilidad de mt-core-tenancy.
+            // =======================
+            foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+            {
+                if (typeof(ITenantEntity).IsAssignableFrom(entityType.ClrType))
+                {
+                    modelBuilder.Entity(entityType.ClrType)
+                        .HasOne(typeof(Prestamista))
+                        .WithMany()
+                        .HasForeignKey(nameof(ITenantEntity.prestamista_id))
+                        .OnDelete(DeleteBehavior.Restrict);
+                }
+            }
+
+            // =======================
+            // MONEYPINE-MT: índices de tenant — Fase 1, Parte 4.3
+            // El tenant SIEMPRE va primero en el índice.
+            // =======================
+
+            // cliente no tiene columna 'estatus' propia (vive en usuario, 1 a 1)
+            // — el documento de arquitectura lo asume por error. Índice simple.
+            modelBuilder.Entity<Cliente>()
+                .HasIndex(c => c.prestamista_id)
+                .HasDatabaseName("ix_cliente_tenant");
+
+            modelBuilder.Entity<Cliente>()
+                .HasIndex(c => new { c.prestamista_id, c.clave_cliente })
+                .IsUnique()
+                .HasDatabaseName("ux_cliente_clave");
+
+            modelBuilder.Entity<Prestamo>()
+                .HasIndex(p => new { p.prestamista_id, p.estatus, p.fecha_proximo_pago })
+                .HasDatabaseName("ix_prestamo_tenant");
+
+            modelBuilder.Entity<Pago>()
+                .HasIndex(p => new { p.prestamista_id, p.fecha_pago })
+                .HasDatabaseName("ix_pago_tenant");
+
+            modelBuilder.Entity<Gerencia>()
+                .HasIndex(g => new { g.prestamista_id, g.codigo })
+                .IsUnique()
+                .HasDatabaseName("ux_gerencia_codigo");
+
+            // MONEYPINE-MT: NO únicos — hay codigo='C.M' duplicado en ruta
+            // (ruta_id 3 y 5) y correo='' duplicado 6 veces en usuario, ambos
+            // dentro del mismo tenant 1. Un UNIQUE tronaría al aplicar la
+            // migración. Queda como índice normal; limpiar los duplicados y
+            // subir a UNIQUE es deuda para un slice de datos aparte.
+            modelBuilder.Entity<Ruta>()
+                .HasIndex(r => new { r.prestamista_id, r.codigo })
+                .HasDatabaseName("ix_ruta_codigo");
+
+            modelBuilder.Entity<Usuario>()
+                .HasIndex(u => new { u.prestamista_id, u.correo })
+                .HasDatabaseName("ix_usuario_correo");
+
+            // =======================
+            // MONEYPINE-MT: Global Query Filter de tenant — Fase 1, Parte 4.5.
+            // Por reflexión sobre las mismas 27 entidades ITenantEntity que ya
+            // recorrió el arquitecto para las FKs (Data/AppDbContext.cs arriba).
+            // AplicarFiltroTenant<T> referencia TenantId/EsPlataforma — propiedades
+            // de instancia — nunca _tenant directo. Ver invariante I2.
+            // =======================
+            foreach (var entityType in modelBuilder.Model.GetEntityTypes()
+                         .Where(e => typeof(ITenantEntity).IsAssignableFrom(e.ClrType)))
+            {
+                _setFilterMethod.MakeGenericMethod(entityType.ClrType)
+                    .Invoke(this, new object[] { modelBuilder });
+            }
+        }
+
+        private static readonly MethodInfo _setFilterMethod = typeof(AppDbContext)
+            .GetMethod(nameof(AplicarFiltroTenant), BindingFlags.NonPublic | BindingFlags.Instance)!;
+
+        // MONEYPINE-MT: e.prestamista_id == TenantId (propiedad de instancia, NO
+        // Expression.Constant(_tenant)) — es lo único que evita el bug de caché
+        // del modelo de EF Core. Ver invariante I2 arriba.
+        private void AplicarFiltroTenant<T>(ModelBuilder mb) where T : class, ITenantEntity
+            => mb.Entity<T>().HasQueryFilter(e => EsPlataforma || e.prestamista_id == TenantId);
+
+        // =======================
+        // MONEYPINE-MT: asignación y protección automática de tenant — Fase 1,
+        // Parte 4.5. Override de AMBOS SaveChanges (sync y async): el proyecto
+        // tiene código síncrono existente que llama SaveChanges() a secas, y si
+        // solo interceptamos la versión async esos flujos siguen creando filas
+        // sin prestamista_id.
+        //   - Added -> se FUERZA el tenant actual, se ignora lo que traiga la
+        //     entidad.
+        //   - Modified/Deleted de OTRO tenant (y no plataforma) -> se bloquea:
+        //     evita que un request ya autenticado como tenant A edite/borre una
+        //     fila de tenant B que haya llegado al ChangeTracker por otra vía
+        //     (p.ej. FindAsync sin filtrar — ver trampa documentada en el reporte).
+        //
+        // MONEYPINE-MT: la asignación en Added NO se condiciona a
+        // `prestamista_id == 0`. Con esa condición, un body que trajera un
+        // prestamista_id ajeno se respetaba tal cual: se demostró insertando una
+        // fila del tenant 999 con un token del tenant 1 (POST /api/ConceptoSistema
+        // con prestamista_id en el JSON -> 200 OK). El origen del tenant es el
+        // token, nunca el cuerpo de la petición, así que se sobrescribe siempre.
+        // Esto cubre de una vez a todo controlador que haga [FromBody] Entidad +
+        // Add(dto), sin depender de que cada uno se acuerde de limpiar el campo.
+        // =======================
+        private void AplicarTenantAEntidadesRastreadas()
+        {
+            foreach (var entry in ChangeTracker.Entries<ITenantEntity>())
+            {
+                if (entry.State == EntityState.Added && !EsPlataforma)
+                    entry.Entity.prestamista_id = TenantId;
+
+                if ((entry.State == EntityState.Modified || entry.State == EntityState.Deleted)
+                    && !EsPlataforma && entry.Entity.prestamista_id != TenantId)
+                    throw new UnauthorizedAccessException("Escritura cross-tenant bloqueada");
+            }
+        }
+
+        public override int SaveChanges(bool acceptAllChangesOnSuccess)
+        {
+            AplicarTenantAEntidadesRastreadas();
+            return base.SaveChanges(acceptAllChangesOnSuccess);
+        }
+
+        public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        {
+            AplicarTenantAEntidadesRastreadas();
+            return base.SaveChangesAsync(cancellationToken);
         }
     }
 }

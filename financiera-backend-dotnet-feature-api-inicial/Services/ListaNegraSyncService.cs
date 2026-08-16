@@ -1,4 +1,5 @@
 using ApiEjemplo.Data;
+using ApiEjemplo.Tenancy;
 
 namespace ApiEjemplo.Services
 {
@@ -52,16 +53,22 @@ namespace ApiEjemplo.Services
         {
             try
             {
-                using var scope = _services.CreateScope();
-                var svc = scope.ServiceProvider.GetRequiredService<ListaNegraService>();
+                // MONEYPINE-MT: la lista negra es de cada prestamista. Fijado al tenant 1,
+                // la de cualquier otro no se sincronizaba nunca.
+                await TenantJobRunner.PorCadaTenantAsync(
+                    _services.GetRequiredService<IServiceScopeFactory>(), _logger, "ListaNegraSyncService",
+                    async (scope, tenantId) =>
+                    {
+                        var svc = scope.ServiceProvider.GetRequiredService<ListaNegraService>();
 
-                // usuarioId null: la ejecuto el sistema, no una persona.
-                var r = await svc.SincronizarAsync(null);
+                        // usuarioId null: la ejecuto el sistema, no una persona.
+                        var r = await svc.SincronizarAsync(null);
 
-                _logger.LogInformation(
-                    "ListaNegraSyncService: {ag} agregados, {rem} removidos, " +
-                    "{om} omitidos por baja manual.",
-                    r.agregados, r.removidos, r.omitidos_por_baja_manual);
+                        _logger.LogInformation(
+                            "ListaNegraSyncService: prestamista {t} — {ag} agregados, {rem} removidos, " +
+                            "{om} omitidos por baja manual.",
+                            tenantId, r.agregados, r.removidos, r.omitidos_por_baja_manual);
+                    });
             }
             catch (Exception ex)
             {

@@ -1,15 +1,19 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Text.Json.Serialization;
+using ApiEjemplo.Tenancy;
 
 namespace ApiEjemplo.Models
 {
     // MONEYPINE-FIX: tabla de amortización migrada desde sinaits5_moneypine.credito_amortizacion
     [Table("periodo_amortizacion")]
-    public class PeriodoAmortizacion
+    public class PeriodoAmortizacion : ITenantEntity
     {
         [Key]
         public int periodo_id { get; set; }
+
+        // MONEYPINE-MT: Fase 1 — Parte 4.3
+        public int prestamista_id { get; set; }
 
         [Required]
         public int prestamo_id { get; set; }
