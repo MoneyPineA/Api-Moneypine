@@ -22,6 +22,12 @@ namespace ApiEjemplo.Tenancy
     {
         private readonly RequestDelegate _next;
         private readonly ILogger<HostTenantGuardMiddleware> _logger;
+        private readonly string _dominioTenants;
+
+        // MONEYPINE-FIX: dominio bajo el cual cuelgan los subdominios de tenant.
+        // Sobrescribible con "Tenancy:DominioTenants" en appsettings para que
+        // staging o un dominio nuevo no obliguen a recompilar.
+        private const string DominioPorDefecto = "moneypine.com.mx";
 
         // Subdominios que no son de ningun prestamista. "api" y "www" son de
         // infraestructura; el apex (moneypine.com.mx, sin subdominio) tampoco lo es.
@@ -30,15 +36,19 @@ namespace ApiEjemplo.Tenancy
             "www", "api", "admin", "app", "panel", "plataforma", "staging", "localhost",
         };
 
-        public HostTenantGuardMiddleware(RequestDelegate next, ILogger<HostTenantGuardMiddleware> logger)
+        public HostTenantGuardMiddleware(
+            RequestDelegate next,
+            ILogger<HostTenantGuardMiddleware> logger,
+            IConfiguration config)
         {
             _next = next;
             _logger = logger;
+            _dominioTenants = config["Tenancy:DominioTenants"] ?? DominioPorDefecto;
         }
 
         public async Task InvokeAsync(HttpContext context, ITenantContext tenant, AppDbContext db)
         {
-            var slug = ExtraerSlug(context.Request.Host.Host);
+            var slug = ExtraerSlug(context.Request.Host.Host, _dominioTenants);
 
             // Sin subdominio util (apex, api.*, localhost, IP de Railway) no hay nada
             // que contrastar: manda el token, que es como funciona hoy.
@@ -88,33 +98,49 @@ namespace ApiEjemplo.Tenancy
         }
 
         // "puebla.moneypine.com.mx" -> "puebla";  "moneypine.com.mx" -> null
-        internal static string? ExtraerSlug(string? host)
+        //
+        // MONEYPINE-FIX: se pasa de LISTA NEGRA a LISTA BLANCA. La version anterior
+        // trataba como slug de tenant el primer segmento de CUALQUIER host con 3+
+        // partes, y solo descartaba los que reconocia (Reservados + sufijos .mx).
+        // El host real del backend en Railway —api-moneypine-production.up.railway.app—
+        // no caia en ninguno de los dos filtros: "api-moneypine-production" no es
+        // igual a "api" (el HashSet compara por igualdad exacta, no por prefijo) y
+        // "up.railway.app" no esta en la lista de sufijos. Resultado: se extraia
+        // "api-moneypine-production" como slug, ningun prestamista lo tenia, y el
+        // guard respondia 404 a TODA peticion autenticada, de TODOS los tenants.
+        // Login seguia funcionando (es anonimo y sale antes), asi que el sintoma era
+        // una app que entraba bien y luego mostraba todo vacio.
+        //
+        // Con lista blanca, cualquier host que no cuelgue del dominio de tenants
+        // devuelve null y manda el token, que es el comportamiento correcto: el host
+        // solo puede CONTRADECIR al token, nunca decidir por su cuenta.
+        internal static string? ExtraerSlug(string? host, string dominioTenants)
         {
             if (string.IsNullOrWhiteSpace(host)) return null;
+            if (string.IsNullOrWhiteSpace(dominioTenants)) return null;
 
             // Host.Host ya viene sin puerto, pero se recorta por si acaso.
-            var limpio = host.Split(':')[0].Trim().TrimEnd('.');
+            var limpio = host.Split(':')[0].Trim().TrimEnd('.').ToLowerInvariant();
             if (limpio.Length == 0) return null;
 
             // Una IP no lleva subdominio (Railway resuelve por IP en healthchecks).
             if (System.Net.IPAddress.TryParse(limpio, out _)) return null;
 
-            var partes = limpio.Split('.');
-            // Hace falta subdominio + dominio + TLD como minimo ("a.b.c").
-            // "moneypine.com.mx" son 3 partes pero el apex de un .com.mx tambien,
-            // asi que se exige que sobre algo por delante del dominio conocido.
-            if (partes.Length < 3) return null;
+            var dominio = dominioTenants.Trim().TrimEnd('.').ToLowerInvariant();
 
-            var candidato = partes[0];
+            // El apex ("moneypine.com.mx") no termina en ".moneypine.com.mx", asi que
+            // cae aqui y devuelve null — correcto, el apex no es de ningun tenant.
+            if (!limpio.EndsWith("." + dominio, StringComparison.Ordinal)) return null;
+
+            var candidato = limpio[..^(dominio.Length + 1)];
+            if (candidato.Length == 0) return null;
+
+            // Un solo nivel de subdominio: "puebla" si, "algo.puebla" no.
+            if (candidato.Contains('.')) return null;
+
             if (Reservados.Contains(candidato)) return null;
 
-            // El apex de un dominio de segundo nivel ("moneypine.com.mx") tiene 3
-            // partes y su primera parte es el dominio, no un subdominio. Se descarta
-            // comparando contra los sufijos compuestos habituales en MX.
-            var resto = string.Join('.', partes.Skip(1));
-            if (resto is "com.mx" or "org.mx" or "net.mx" or "gob.mx") return null;
-
-            return candidato.ToLowerInvariant();
+            return candidato;
         }
     }
 }
