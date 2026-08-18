@@ -22,11 +22,14 @@ namespace ApiEjemplo.Controllers
         // veian el dashboard vacio sin ninguna explicacion.
         // GERENTE se agrego el 2026-08-14 a peticion del negocio. RECURSOS_HUMANOS se
         // mantiene: ya tenia el modulo y quitarselo seria una regresion para quien lo usa.
-        private const string RolesResumen = "ADMIN,DIRECCION_GENERAL,RECURSOS_HUMANOS,GERENTE,CONTADOR";
+        // MONEYPINE 2026-08-17: al día con el menú nuevo. RolesResumen quita RRHH (ya no
+        // ve Resumen ni Cartera activa) y mantiene GERENTE (que ve Cartera activa, la cual
+        // usa /indicadores).
+        private const string RolesResumen = "ADMIN,DIRECCION_GENERAL,CONTADOR,GERENTE";
 
-        // "Trabajadores conectados" se muestra en Reportes, que en el menu tiene otro
-        // conjunto de roles — se respeta ese, no el de Resumen.
-        private const string RolesReportes = "ADMIN,DIRECCION_GENERAL,GERENTE,COBRADOR,CONTADOR";
+        // Reportes: RRHH ve SOLO "Trabajadores conectados" (filtrado en el menú); COBRADOR
+        // ya no ve Reportes.
+        private const string RolesReportes = "ADMIN,DIRECCION_GENERAL,GERENTE,CONTADOR,RECURSOS_HUMANOS";
 
         public AdminDashboardController(AppDbContext context)
         {
