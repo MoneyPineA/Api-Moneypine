@@ -25,6 +25,13 @@ namespace ApiEjemplo.Models
         [Required]
         public DateTime fecha_pago { get; set; }
 
+        // MONEYPINE-FIX: fecha/hora REAL en la que se capturó el pago en el sistema —
+        // se asigna sola al crear el pago (PagoController.Create), nunca la elige el
+        // usuario. Distinta de fecha_pago (la fecha que el usuario indica que se hizo
+        // el pago, puede ser retroactiva). Nullable porque los pagos anteriores a este
+        // campo no tienen este dato — se deja en null en vez de inventarlo.
+        public DateTime? fecha_registro { get; set; }
+
         // Montos
         [Required]
         [Column(TypeName = "decimal(12,2)")]

@@ -129,6 +129,7 @@ namespace ApiEjemplo.Controllers
                 empleado_aplicador = p.cobrador_id.HasValue && cobradores.ContainsKey(p.cobrador_id.Value)
                     ? cobradores[p.cobrador_id.Value] : null,
                 p.fecha_pago,
+                p.fecha_registro,
                 p.monto_pagado,
                 p.interes_pagado,
                 p.interes_iva,
@@ -167,6 +168,7 @@ namespace ApiEjemplo.Controllers
                 pago.cobrador_id,
                 empleado_aplicador = emp,
                 pago.fecha_pago,
+                pago.fecha_registro,
                 pago.monto_pagado,
                 pago.interes_pagado,
                 pago.interes_iva,
@@ -251,13 +253,16 @@ namespace ApiEjemplo.Controllers
             // 4. Insertar pago — distribución calculada por Reconstruir
             var pago = new Pago
             {
-                prestamo_id  = prestamo.prestamo_id,
-                cobrador_id  = usuarioId ?? dto.cobrador_id,
-                fecha_pago   = fechaPago,
-                monto_pagado = dto.monto_pagado,
-                metodo_pago  = dto.metodo_pago,
-                tipo_pago    = tipoPago,
-                estatus      = EstatusPago.APLICADO,
+                prestamo_id    = prestamo.prestamo_id,
+                cobrador_id    = usuarioId ?? dto.cobrador_id,
+                fecha_pago     = fechaPago,
+                // MONEYPINE-FIX: fecha/hora real de captura — no viene del DTO, el
+                // usuario no la elige, siempre es "ahora" en el momento de guardar.
+                fecha_registro = TimeHelper.GetMexicoTime(),
+                monto_pagado   = dto.monto_pagado,
+                metodo_pago    = dto.metodo_pago,
+                tipo_pago      = tipoPago,
+                estatus        = EstatusPago.APLICADO,
             };
             _context.Pagos.Add(pago);
             await _context.SaveChangesAsync();
