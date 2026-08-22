@@ -138,7 +138,14 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         ValidIssuer = builder.Configuration["Jwt:Issuer"],
         ValidAudience = builder.Configuration["Jwt:Audience"],
         IssuerSigningKey = new SymmetricSecurityKey(
-            Encoding.UTF8.GetBytes(jwtKey!))
+            Encoding.UTF8.GetBytes(jwtKey!)),
+        // MONEYPINE-FIX: sin esto, Microsoft.IdentityModel.Tokens usa su default
+        // implícito de 5 minutos de tolerancia (verificado empíricamente contra la
+        // versión 7.1.2 que resuelve este proyecto), así que un access token emitido
+        // con "expires: 5 minutos" en AuthController seguía siendo aceptado hasta
+        // ~10 minutos después de emitido — el doble de lo que dice el código que lo
+        // genera. Se deja en cero para que la duración configurada sea la real.
+        ClockSkew = TimeSpan.Zero,
     };
 });
 
