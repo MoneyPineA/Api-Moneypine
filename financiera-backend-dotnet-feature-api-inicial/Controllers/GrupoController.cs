@@ -138,7 +138,11 @@ namespace ApiEjemplo.Controllers
             };
             decimal interesPerPeriodoGrp = dto.monto * dto.tasa_interes / (freqDivGrp * 100m);
             decimal ivaPerPeriodoGrp     = interesPerPeriodoGrp * 0.16m;
-            decimal pagoMes              = Math.Round(dto.monto / dto.plazo_meses + interesPerPeriodoGrp + ivaPerPeriodoGrp, 2);
+            decimal capitalPorPagoGrp    = Math.Round(dto.monto / dto.plazo_meses, 2);
+            decimal interesPorPagoGrp    = Math.Round(interesPerPeriodoGrp, 2);
+            decimal ivaPorPagoGrp        = Math.Round(ivaPerPeriodoGrp, 2);
+            decimal _pagoBrutoGrp        = capitalPorPagoGrp + interesPorPagoGrp + ivaPorPagoGrp;
+            decimal pagoMes              = _pagoBrutoGrp % 1 > 0.001m ? Math.Ceiling(_pagoBrutoGrp) : _pagoBrutoGrp;
             DateTime fechaInicio = fechaCreacion.AddMonths(1);
             DateTime fechaFin    = fechaInicio.AddMonths(dto.plazo_meses - 1);
             decimal moraDiaria   = dto.moratorio_por_dia.HasValue && dto.moratorio_por_dia.Value > 0
