@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ApiEjemplo.Data;
+using ApiEjemplo.Helpers;
 using ApiEjemplo.Models;
 
 namespace ApiEjemplo.Controllers
@@ -90,12 +91,38 @@ namespace ApiEjemplo.Controllers
             }
         }
 
+        // Días que dura un periodo según la forma de pago del crédito
+        private static int DiasPorPeriodo(string? formaPago) => (formaPago ?? "").ToUpperInvariant() switch
+        {
+            "DIARIA"     => 1,
+            "SEMANAL"    => 7,
+            "CATORCENAL" => 14,
+            "QUINCENAL"  => 15,
+            _            => 30, // MENSUAL
+        };
+
         // GET /api/BuroAutoReporte/exportar — todos los registros con datos completos para el Excel BC
+        //
+        // MONEYPINE-FIX: el layout de Buró se entrega por PERIODO MENSUAL, no "al día
+        // de hoy". Todo se calcula a una fecha de corte (último día del mes reportado)
+        // y los pagos posteriores al corte NO cuentan para este reporte: entran en el
+        // del mes siguiente. Sin corte, saldos y pagos vencidos salían desfasados.
         [HttpGet("exportar")]
-        public async Task<IActionResult> Exportar()
+        public async Task<IActionResult> Exportar([FromQuery] string? corte = null)
         {
             try
             {
+                DateTime fechaCorte;
+                if (!DateTime.TryParse(corte, out fechaCorte))
+                {
+                    var hoy = TimeHelper.GetMexicoTime();
+                    fechaCorte = new DateTime(hoy.Year, hoy.Month, DateTime.DaysInMonth(hoy.Year, hoy.Month));
+                }
+                fechaCorte = fechaCorte.Date;
+
+                var corteFin  = fechaCorte.AddDays(1);                              // exclusivo
+                var inicioMes = new DateTime(fechaCorte.Year, fechaCorte.Month, 1); // mes del reporte
+
                 var lista = await _db.BuroAutoReportes
                     .Join(_db.Prestamos,
                           b => b.prestamo_id,
@@ -121,6 +148,7 @@ namespace ApiEjemplo.Controllers
                               plazo_meses       = bpc.p.plazo_meses,
                               pago_mes          = bpc.p.pago_mes,
                               fecha_inicio      = bpc.p.fecha_inicio.ToString("yyyy-MM-dd"),
+                              fecha_inicio_dt   = (DateTime?)bpc.p.fecha_inicio,
                               monto             = bpc.p.monto,
                               monto_total       = bpc.p.monto_total,
                               saldo_actual      = bpc.p.saldo_actual,
@@ -160,57 +188,121 @@ namespace ApiEjemplo.Controllers
                                   .Where(pg => pg.prestamo_id == bpc.b.prestamo_id)
                                   .OrderByDescending(pg => pg.fecha_pago)
                                   .Select(pg => (DateTime?)pg.fecha_pago)
-                                  .FirstOrDefault()
+                                  .FirstOrDefault(),
+
+                              // ── Datos "al corte" para el reporte BC ──
+                              // Último pago hecho HASTA el corte (ignora pagos posteriores)
+                              ultimo_pago_corte = _db.Pagos
+                                  .Where(pg => pg.prestamo_id == bpc.b.prestamo_id && pg.fecha_pago < corteFin)
+                                  .OrderByDescending(pg => pg.fecha_pago)
+                                  .Select(pg => (DateTime?)pg.fecha_pago)
+                                  .FirstOrDefault(),
+                              // Abonado a la DEUDA (capital + interés + IVA, sin mora) hasta el corte
+                              pagado_hasta_corte = _db.Pagos
+                                  .Where(pg => pg.prestamo_id == bpc.b.prestamo_id && pg.fecha_pago < corteFin)
+                                  .Sum(pg => (decimal?)(pg.abono_capital + pg.interes_pagado + pg.interes_iva)) ?? 0m,
+                              // Abonado dentro del mes del reporte — define si llegó al pago mínimo (MOP 01)
+                              pagado_en_mes_corte = _db.Pagos
+                                  .Where(pg => pg.prestamo_id == bpc.b.prestamo_id
+                                            && pg.fecha_pago >= inicioMes && pg.fecha_pago < corteFin)
+                                  .Sum(pg => (decimal?)(pg.monto_pagado - pg.mora_pagada)) ?? 0m,
+                              // Condonaciones de crédito: bajan la deuda sin que haya pago
+                              condonado_credito = _db.PeriodosAmortizacion
+                                  .Where(pa => pa.prestamo_id == bpc.b.prestamo_id)
+                                  .Sum(pa => (decimal?)(pa.capital_condonado + pa.interes_condonado + pa.iva_condonado)) ?? 0m
                           })
                     .OrderBy(x => x.prestamo_id)
                     .ToListAsync();
 
-                return Ok(lista.Select(x => new {
-                    x.prestamo_id,
-                    x.cliente_id,
-                    x.dias_mora,
-                    x.saldo_pendiente,
-                    x.fecha_reporte,
-                    x.motivo,
-                    x.forma_pago,
-                    x.plazo_meses,
-                    x.pago_mes,
-                    x.fecha_inicio,
-                    x.monto,
-                    x.monto_total,
-                    x.saldo_actual,
-                    x.administrado_en,
-                    x.estatus,
-                    x.apellido_paterno,
-                    x.apellido_materno,
-                    x.fecha_nacimiento,
-                    x.curp,
-                    x.rfc,
-                    x.sexo,
-                    x.estado_civil,
-                    x.empresa_nombre,
-                    x.calle,
-                    x.colonia,
-                    x.municipio,
-                    x.ciudad,
-                    x.cp,
-                    x.telefono,
-                    x.ruta_vinculacion,
-                    x.estado_domicilio,
-                    x.num_ext,
-                    x.nombre_cliente,
-                    x.apellido_usuario,
-                    x.numero_pagos_vencidos,
-                    fecha_cierre = (x.estatus == "LIQUIDADO" || x.estatus == "CANCELADO")
-                        && x.fecha_fin.HasValue && x.fecha_fin.Value.Year > 2000
-                        ? x.fecha_fin.Value.ToString("yyyy-MM-dd")
-                        : null,
-                    ultimo_pago = x.ultimo_pago.HasValue ? x.ultimo_pago.Value.ToString("yyyy-MM-dd") : null,
-                    fecha_primer_incumplimiento = (x.fecha_primer_incumplimiento.HasValue && x.fecha_primer_incumplimiento.Value.Year > 2000)
-                        ? x.fecha_primer_incumplimiento.Value.ToString("yyyy-MM-dd")
-                        : (x.fecha_proximo_pago.HasValue && x.fecha_proximo_pago.Value.Year > 2000
-                            ? x.fecha_proximo_pago.Value.ToString("yyyy-MM-dd")
-                            : null)
+                return Ok(lista.Select(x =>
+                {
+                    // ── Cálculos del layout BC, todos referidos a la fecha de corte ──
+                    int diasPeriodo = DiasPorPeriodo(x.forma_pago);
+
+                    // Se cuenta desde el pago siguiente al último que SÍ dio el cliente:
+                    // último pago + 1 periodo. Sin pagos, desde el primer vencimiento
+                    // (fecha_inicio = vencimiento del periodo 1).
+                    DateTime baseVencimiento;
+                    if (x.ultimo_pago_corte.HasValue)
+                        baseVencimiento = x.ultimo_pago_corte.Value.Date.AddDays(diasPeriodo);
+                    else if (x.fecha_inicio_dt.HasValue && x.fecha_inicio_dt.Value.Year > 2000)
+                        baseVencimiento = x.fecha_inicio_dt.Value.Date;
+                    else
+                        baseVencimiento = fechaCorte;
+
+                    int diasCrudos = (int)(fechaCorte - baseVencimiento).TotalDays;
+                    if (diasCrudos < 0) diasCrudos = 0;
+
+                    // Buró topa en 999 días; de ahí ya no avanzan días ni pagos vencidos
+                    int diasVencidosBC   = Math.Min(diasCrudos, 999);
+                    int pagosVencidosBC  = diasPeriodo > 0 ? diasVencidosBC / diasPeriodo : 0;
+
+                    // Saldo actual BC = deuda TOTAL (capital + interés + IVA) menos lo
+                    // abonado hasta el corte. No es prestamo.saldo_actual, que es capital puro.
+                    decimal saldoBC = Math.Max(0m, x.monto_total - x.pagado_hasta_corte - x.condonado_credito);
+
+                    // Vencido = lo que debió pagar entre el último pago y el corte, nunca
+                    // más que el saldo total.
+                    decimal saldoVencidoBC = Math.Min(pagosVencidosBC * x.pago_mes, saldoBC);
+
+                    return new {
+                        x.prestamo_id,
+                        x.cliente_id,
+                        x.dias_mora,
+                        x.saldo_pendiente,
+                        x.fecha_reporte,
+                        x.motivo,
+                        x.forma_pago,
+                        x.plazo_meses,
+                        x.pago_mes,
+                        x.fecha_inicio,
+                        x.monto,
+                        x.monto_total,
+                        x.saldo_actual,
+                        x.administrado_en,
+                        x.estatus,
+                        x.apellido_paterno,
+                        x.apellido_materno,
+                        x.fecha_nacimiento,
+                        x.curp,
+                        x.rfc,
+                        x.sexo,
+                        x.estado_civil,
+                        x.empresa_nombre,
+                        x.calle,
+                        x.colonia,
+                        x.municipio,
+                        x.ciudad,
+                        x.cp,
+                        x.telefono,
+                        x.ruta_vinculacion,
+                        x.estado_domicilio,
+                        x.num_ext,
+                        x.nombre_cliente,
+                        x.apellido_usuario,
+                        x.numero_pagos_vencidos,
+
+                        // ── Campos del reporte BC calculados al corte ──
+                        fecha_corte        = fechaCorte.ToString("yyyy-MM-dd"),
+                        credito_maximo_bc  = x.monto,            // solo lo prestado, sin interés ni IVA
+                        saldo_bc           = Math.Round(saldoBC, 2),
+                        saldo_vencido_bc   = Math.Round(saldoVencidoBC, 2),
+                        dias_vencidos_bc   = diasVencidosBC,
+                        pagos_vencidos_bc  = pagosVencidosBC,
+                        pagado_en_mes_corte = Math.Round(x.pagado_en_mes_corte, 2),
+
+                        fecha_cierre = (x.estatus == "LIQUIDADO" || x.estatus == "CANCELADO")
+                            && x.fecha_fin.HasValue && x.fecha_fin.Value.Year > 2000
+                            ? x.fecha_fin.Value.ToString("yyyy-MM-dd")
+                            : null,
+                        // Último pago HASTA el corte: los posteriores van en el reporte siguiente
+                        ultimo_pago = x.ultimo_pago_corte.HasValue ? x.ultimo_pago_corte.Value.ToString("yyyy-MM-dd") : null,
+                        fecha_primer_incumplimiento = (x.fecha_primer_incumplimiento.HasValue && x.fecha_primer_incumplimiento.Value.Year > 2000)
+                            ? x.fecha_primer_incumplimiento.Value.ToString("yyyy-MM-dd")
+                            : (x.fecha_proximo_pago.HasValue && x.fecha_proximo_pago.Value.Year > 2000
+                                ? x.fecha_proximo_pago.Value.ToString("yyyy-MM-dd")
+                                : null)
+                    };
                 }));
             }
             catch (Exception ex)
